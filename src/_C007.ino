@@ -7,9 +7,9 @@
 #define CPLUGIN_ID_007         7
 #define CPLUGIN_NAME_007       "Emoncms"
 
-boolean CPlugin_007(byte function, struct EventStruct *event, String& string)
+bool CPlugin_007(byte function, struct EventStruct *event, String& string)
 {
-  boolean success = false;
+  bool success = false;
 
   switch (function)
   {
@@ -49,6 +49,14 @@ boolean CPlugin_007(byte function, struct EventStruct *event, String& string)
         scheduleNextDelayQueue(TIMER_C007_DELAY_QUEUE, C007_DelayHandler.getNextScheduleTime());
         break;
       }
+
+    case CPLUGIN_FLUSH:
+      {
+        process_c007_delay_queue();
+        delay(0);
+        break;
+      }
+
 
   }
   return success;

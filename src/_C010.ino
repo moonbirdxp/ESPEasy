@@ -7,9 +7,9 @@
 #define CPLUGIN_ID_010         10
 #define CPLUGIN_NAME_010       "Generic UDP"
 
-boolean CPlugin_010(byte function, struct EventStruct *event, String& string)
+bool CPlugin_010(byte function, struct EventStruct *event, String& string)
 {
-  boolean success = false;
+  bool success = false;
 
   switch (function)
   {
@@ -65,6 +65,14 @@ boolean CPlugin_010(byte function, struct EventStruct *event, String& string)
         scheduleNextDelayQueue(TIMER_C010_DELAY_QUEUE, C010_DelayHandler.getNextScheduleTime());
         break;
       }
+
+    case CPLUGIN_FLUSH:
+      {
+        process_c010_delay_queue();
+        delay(0);
+        break;
+      }
+
 
   }
   return success;

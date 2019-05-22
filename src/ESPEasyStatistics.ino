@@ -5,7 +5,7 @@ void logStatistics(byte loglevel, bool clearStats) {
     log.reserve(80);
     for (auto& x: pluginStats) {
         if (!x.second.isEmpty()) {
-            const int pluginId = x.first/32;
+            const int pluginId = x.first/256;
             String P_name = "";
             Plugin_ptr[pluginId](PLUGIN_GET_DEVICENAME, NULL, P_name);
             log = F("PluginStats P_");
@@ -13,7 +13,7 @@ void logStatistics(byte loglevel, bool clearStats) {
             log += '_';
             log += P_name;
             log += ' ';
-            log += getPluginFunctionName(x.first%32);
+            log += getPluginFunctionName(x.first%256);
             log += ' ';
             log += getLogLine(x.second);
             addLog(loglevel, log);
@@ -49,7 +49,7 @@ void jsonStatistics(bool clearStats) {
   stream_json_start_array(F("plugin"));
   for (auto& x: pluginStats) {
     if (!x.second.isEmpty()) {
-      const int pluginId = x.first/32;
+      const int pluginId = x.first/256;
       if (currentPluginId != pluginId) {
         // new plugin
         currentPluginId = pluginId;
@@ -74,7 +74,7 @@ void jsonStatistics(bool clearStats) {
 
       unsigned long minVal, maxVal;
       unsigned int c = x.second.getMinMax(minVal, maxVal);
-      stream_plugin_function_timing_stats_json(getPluginFunctionName(x.first%32),
+      stream_plugin_function_timing_stats_json(getPluginFunctionName(x.first%256),
                                                c, minVal, maxVal, x.second.getAvg());
       if (clearStats) x.second.reset();
       firstFunction = false;
@@ -85,8 +85,4 @@ void jsonStatistics(bool clearStats) {
   stream_json_end_array_element(true);  // end "function" array
   stream_json_end_object_element(true); // end "plugin" object
   stream_json_end_array_element(true);  // end "plugin" array
-  if (clearStats) {
-    timediff_calls = 0;
-    timediff_cpu_cycles_total = 0;
-  }
 }

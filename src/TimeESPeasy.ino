@@ -18,6 +18,7 @@ uint32_t syncInterval = 3600;  // time sync will be attempted after this many se
 double sysTime = 0.0; // Use high resolution double to get better sync between nodes when using NTP
 uint32_t prevMillis = 0;
 uint32_t nextSyncTime = 0;
+double externalTimeSource = -1.0; // Used to set time from a source other than NTP.
 struct tm tsRise, tsSet;
 struct tm sunRise;
 struct tm sunSet;
@@ -199,7 +200,6 @@ String getSunsetTimeString(char delimiter, int secOffset) {
   return getTimeString(getSunSet(secOffset), delimiter, false, false);
 }
 
-
 unsigned long now() {
   // calculate number of seconds passed since last call to now()
   bool timeSynced = false;
@@ -208,14 +208,28 @@ unsigned long now() {
 	prevMillis += msec_passed;
 	if (nextSyncTime <= sysTime) {
 		// nextSyncTime & sysTime are in seconds
-		double unixTime_d;
-		if (getNtpTime(unixTime_d)) {
-			prevMillis = millis();  // restart counting from now (thanks to Korman for this fix)
-			timeSynced = true;
-			sysTime = unixTime_d;
+		double unixTime_d = -1.0;
+    if (externalTimeSource > 0.0) {
+      unixTime_d = externalTimeSource;
+      externalTimeSource = -1.0;
+    }
+		if (unixTime_d > 0.0 || getNtpTime(unixTime_d)) {
+      prevMillis = millis();  // restart counting from now (thanks to Korman for this fix)
+      timeSynced = true;
+      if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+        double time_offset = sysTime - unixTime_d;
+        String log = F("Time adjusted by ");
+        log += String(time_offset * 1000.0);
+        log += F(" msec. Wander: ");
+        log += String((time_offset * 1000.0) / syncInterval);
+        log += F(" msec/second");
+        addLog(LOG_LEVEL_INFO, log)
+      }
+      sysTime = unixTime_d;
 
-			applyTimeZone(unixTime_d);
-			nextSyncTime = (uint32_t)unixTime_d + syncInterval;
+
+      applyTimeZone(unixTime_d);
+      nextSyncTime = (uint32_t)unixTime_d + syncInterval;
 		}
 	}
 	uint32_t localSystime = toLocal(sysTime);
@@ -294,6 +308,10 @@ void initTime()
 	now();
 }
 
+bool systemTimePresent() {
+  return nextSyncTime > 0 || Settings.UseNTP;
+}
+
 void checkTime()
 {
   now();
@@ -360,9 +378,10 @@ bool getNtpTime(double& unixTime_d)
 	const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
 	byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
-	log += F(" queried");
+  log += F(" queried");
+#ifndef BUILD_NO_DEBUG
 	addLog(LOG_LEVEL_DEBUG_MORE, log);
-
+#endif
 	while (udp.parsePacket() > 0) ; // discard any previously received packets
 
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
@@ -440,7 +459,9 @@ bool getNtpTime(double& unixTime_d)
 		}
 		delay(10);
 	}
+#ifndef BUILD_NO_DEBUG
 	addLog(LOG_LEVEL_DEBUG_MORE, F("NTP  : No reply"));
+#endif
 	udp.stop();
 	return false;
 }
@@ -456,7 +477,6 @@ bool getNtpTime(double& unixTime_d)
 // Returned value is positive when "next" is after "prev"
 long timeDiff(const unsigned long prev, const unsigned long next)
 {
-  unsigned long start = ESP.getCycleCount();
   long signed_diff = 0;
   // To cast a value to a signed long, the difference may not exceed half the ULONG_MAX
   const unsigned long half_max_unsigned_long = 2147483647u; // = 2^31 -1
@@ -482,11 +502,6 @@ long timeDiff(const unsigned long prev, const unsigned long next)
       // next has overflow, return a positive difference value
       signed_diff = static_cast<long>((ULONG_MAX - prev) + next + 1u);
     }
-  }
-  unsigned long end = ESP.getCycleCount();
-  if (end > start) {
-    ++timediff_calls;
-    timediff_cpu_cycles_total += (end - start);
   }
   return signed_diff;
 }

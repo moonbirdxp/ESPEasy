@@ -47,16 +47,19 @@ void sendData(struct EventStruct *event)
     {
       event->ProtocolIndex = getProtocolIndex(Settings.Protocol[event->ControllerIndex]);
       if (validUserVar(event)) {
-        CPlugin_ptr[event->ProtocolIndex](CPLUGIN_PROTOCOL_SEND, event, dummyString);
-      } else {
+        CPluginCall(event->ProtocolIndex, CPLUGIN_PROTOCOL_SEND, event, dummyString);
+      }
+#ifndef BUILD_NO_DEBUG
+        else {
         if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
           String log = F("Invalid value detected for controller ");
           String controllerName;
-          CPlugin_ptr[event->ProtocolIndex](CPLUGIN_GET_DEVICENAME, event, controllerName);
+          CPluginCall(event->ProtocolIndex, CPLUGIN_GET_DEVICENAME, event, controllerName);
           log += controllerName;
           addLog(LOG_LEVEL_DEBUG, log);
         }
       }
+#endif
     }
   }
 
@@ -118,6 +121,17 @@ void callback(char* c_topic, byte* b_payload, unsigned int length) {
   schedule_controller_event_timer(ProtocolIndex, CPLUGIN_PROTOCOL_RECV, &TempEvent);
 }
 
+/*********************************************************************************************\
+ * Disconnect from MQTT message broker
+\*********************************************************************************************/
+void MQTTDisconnect()
+{
+  if (MQTTclient.connected()) {
+    MQTTclient.disconnect();
+    addLog(LOG_LEVEL_INFO, F("MQTT : Disconnected from broker"));
+    updateMQTTclient_connected();
+  }
+}
 
 /*********************************************************************************************\
  * Connect to MQTT message broker
@@ -156,6 +170,7 @@ bool MQTTConnect(int controller_idx)
     clientid = F("ESPClient_");
     clientid += WiFi.macAddress();
   }
+  clientid.replace(' ', '_'); // Make sure no spaces are present in the client ID
   if (wifi_reconnects >= 1 && Settings.uniqueMQTTclientIdReconnect()) {
     // Work-around for 'lost connections' to the MQTT broker.
     // If the broker thinks the connection is still alive, a reconnect from the
@@ -177,25 +192,26 @@ bool MQTTConnect(int controller_idx)
 
   String LWTMessageConnect = ControllerSettings.LWTMessageConnect;
   if(LWTMessageConnect.length() == 0){
-    LWTMessageConnect = DEFAULT_MQTT_LWT_CONNECT_MESSAGE;
+    LWTMessageConnect = F(DEFAULT_MQTT_LWT_CONNECT_MESSAGE);
   }
   parseSystemVariables(LWTMessageConnect, false);
 
   String LWTMessageDisconnect = ControllerSettings.LWTMessageDisconnect;
   if(LWTMessageDisconnect.length() == 0){
-    LWTMessageDisconnect = DEFAULT_MQTT_LWT_DISCONNECT_MESSAGE;
+    LWTMessageDisconnect = F(DEFAULT_MQTT_LWT_DISCONNECT_MESSAGE);
   }
   parseSystemVariables(LWTMessageDisconnect, false);
 
   boolean MQTTresult = false;
   uint8_t willQos = 0;
   boolean willRetain = true;
+  boolean cleanSession = false; // As suggested here: https://github.com/knolleary/pubsubclient/issues/458#issuecomment-493875150
 
   if ((SecuritySettings.ControllerUser[controller_idx] != 0) && (SecuritySettings.ControllerPassword[controller_idx] != 0)) {
     MQTTresult = MQTTclient.connect(clientid.c_str(), SecuritySettings.ControllerUser[controller_idx], SecuritySettings.ControllerPassword[controller_idx],
-                                    LWTTopic.c_str(), willQos, willRetain, LWTMessageDisconnect.c_str());
+                                    LWTTopic.c_str(), willQos, willRetain, LWTMessageDisconnect.c_str(), cleanSession);
   } else {
-    MQTTresult = MQTTclient.connect(clientid.c_str(), LWTTopic.c_str(), willQos, willRetain, LWTMessageDisconnect.c_str());
+    MQTTresult = MQTTclient.connect(clientid.c_str(), nullptr, nullptr, LWTTopic.c_str(), willQos, willRetain, LWTMessageDisconnect.c_str(), cleanSession);
   }
   delay(0);
 
@@ -205,7 +221,6 @@ bool MQTTConnect(int controller_idx)
     updateMQTTclient_connected();
     return false;
   }
-  MQTTclient_should_reconnect = false;
   String log = F("MQTT : Connected to broker with client ID: ");
   log += clientid;
   addLog(LOG_LEVEL_INFO, log);
@@ -220,6 +235,9 @@ bool MQTTConnect(int controller_idx)
     updateMQTTclient_connected();
     statusLED(true);
     mqtt_reconnect_count = 0;
+    // call all installed controller to publish autodiscover data
+    if (MQTTclient_should_reconnect) CPluginCall(CPLUGIN_GOT_CONNECTED, 0);
+    MQTTclient_should_reconnect = false;
     return true; // end loop if succesfull
   }
   return false;
@@ -257,7 +275,7 @@ bool MQTTCheck(int controller_idx)
 /*********************************************************************************************\
  * Send status info to request source
 \*********************************************************************************************/
-void SendStatusOnlyIfNeeded(int eventSource, bool param1, uint32_t key, const String& param2, uint16_t param3) {
+void SendStatusOnlyIfNeeded(int eventSource, bool param1, uint32_t key, const String& param2, int16_t param3) {
   switch (eventSource) {
     case VALUE_SOURCE_HTTP:
     case VALUE_SOURCE_SERIAL:
@@ -306,12 +324,14 @@ void processMQTTdelayQueue() {
     MQTTDelayHandler.markProcessed(true);
   } else {
     MQTTDelayHandler.markProcessed(false);
+#ifndef BUILD_NO_DEBUG
     if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
       String log = F("MQTT : process MQTT queue not published, ");
       log += MQTTDelayHandler.sendQueue.size();
       log += F(" items left in queue");
       addLog(LOG_LEVEL_DEBUG, log);
     }
+#endif
   }
   scheduleNextMQTTdelayQueue();
   STOP_TIMER(MQTT_DELAY_QUEUE);

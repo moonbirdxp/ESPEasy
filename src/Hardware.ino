@@ -137,22 +137,45 @@ void checkResetFactoryPin(){
 /********************************************************************************************\
   Hardware specific configurations
   \*********************************************************************************************/
-String getDeviceModelString(DeviceModel model) {
+
+String getDeviceModelBrandString(DeviceModel model) {
   switch (model) {
-    case DeviceModel_Sonoff_Basic:   return F("Sonoff Basic");
-    case DeviceModel_Sonoff_TH1x:    return F("Sonoff TH1x");
-    case DeviceModel_Sonoff_S2x:     return F("Sonoff S2x");
-    case DeviceModel_Sonoff_TouchT1: return F("Sonoff TouchT1");
-    case DeviceModel_Sonoff_TouchT2: return F("Sonoff TouchT2");
-    case DeviceModel_Sonoff_TouchT3: return F("Sonoff TouchT3");
-    case DeviceModel_Sonoff_4ch:     return F("Sonoff 4ch");
-    case DeviceModel_Sonoff_POW:     return F("Sonoff POW");
-    case DeviceModel_Sonoff_POWr2:   return F("Sonoff POW-r2");
-    case DeviceModel_Shelly1:        return F("Shelly1");
+    case DeviceModel_Sonoff_Basic:
+    case DeviceModel_Sonoff_TH1x:
+    case DeviceModel_Sonoff_S2x:
+    case DeviceModel_Sonoff_TouchT1:
+    case DeviceModel_Sonoff_TouchT2:
+    case DeviceModel_Sonoff_TouchT3:
+    case DeviceModel_Sonoff_4ch:
+    case DeviceModel_Sonoff_POW:
+    case DeviceModel_Sonoff_POWr2:   return F("Sonoff");
+    case DeviceModel_Shelly1:        return F("Shelly");
 
     //case DeviceModel_default:
-    default:        return F("default");
+    default:        return "";
   }
+}
+
+String getDeviceModelString(DeviceModel model) {
+  String result;
+  result.reserve(16);
+  result = getDeviceModelBrandString(model);
+  switch (model) {
+    case DeviceModel_Sonoff_Basic:   result += F(" Basic");   break;
+    case DeviceModel_Sonoff_TH1x:    result += F(" TH1x");    break;
+    case DeviceModel_Sonoff_S2x:     result += F(" S2x");     break;
+    case DeviceModel_Sonoff_TouchT1: result += F(" TouchT1"); break;
+    case DeviceModel_Sonoff_TouchT2: result += F(" TouchT2"); break;
+    case DeviceModel_Sonoff_TouchT3: result += F(" TouchT3"); break;
+    case DeviceModel_Sonoff_4ch:     result += F(" 4ch");     break;
+    case DeviceModel_Sonoff_POW:     result += F(" POW");     break;
+    case DeviceModel_Sonoff_POWr2:   result += F(" POW-r2");  break;
+    case DeviceModel_Shelly1:        result += '1';           break;
+
+    //case DeviceModel_default:
+    default:    result += F("default");
+  }
+  return result;
 }
 
 bool modelMatchingFlashSize(DeviceModel model) {
@@ -196,6 +219,7 @@ void addSwitchPlugin(byte taskIndex, byte gpio, const String& name, bool activeL
   Settings.TaskDevicePin1PullUp[taskIndex] = true;
   if (activeLow)
     Settings.TaskDevicePluginConfig[taskIndex][2] = 1; // PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_LOW;
+  Settings.TaskDevicePluginConfig[taskIndex][3] = 1; // "Send Boot state" checked.
 }
 
 void addPredefinedPlugins(const GpioFactorySettingsStruct& gpio_settings) {
@@ -224,7 +248,7 @@ void addButtonRelayRule(byte buttonNumber, byte relay_gpio) {
     fileName += '/';
   #endif
   fileName += F("rules1.txt");
-  String rule = F("on ButtonBNR#switch do\n  if [ButtonBNR#switch]=1\n    gpio,GNR,1\n  else\n    gpio,GNR,0\n  endif\nendon\n");
+  String rule = F("on ButtonBNR#state do\n  if [RelayBNR#state]=0\n    gpio,GNR,1\n  else\n    gpio,GNR,0\n  endif\nendon\n");
   rule.replace(F("BNR"), String(buttonNumber));
   rule.replace(F("GNR"), String(relay_gpio));
   String result = appendLineToFile(fileName, rule);

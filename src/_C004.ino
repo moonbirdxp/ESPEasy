@@ -7,9 +7,9 @@
 #define CPLUGIN_ID_004         4
 #define CPLUGIN_NAME_004       "ThingSpeak"
 
-boolean CPlugin_004(byte function, struct EventStruct *event, String& string)
+bool CPlugin_004(byte function, struct EventStruct *event, String& string)
 {
-  boolean success = false;
+  bool success = false;
 
   switch (function)
   {
@@ -59,6 +59,13 @@ boolean CPlugin_004(byte function, struct EventStruct *event, String& string)
         success = C004_DelayHandler.addToQueue(C004_queue_element(event));
         scheduleNextDelayQueue(TIMER_C004_DELAY_QUEUE, C004_DelayHandler.getNextScheduleTime());
 
+        break;
+      }
+
+    case CPLUGIN_FLUSH:
+      {
+        process_c004_delay_queue();
+        delay(0);
         break;
       }
 

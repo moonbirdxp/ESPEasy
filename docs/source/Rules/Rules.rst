@@ -191,200 +191,7 @@ Where the "inequality function" is a simple check:
 Some special cases are these system triggers which is triggered upon
 boot/reboot/time/sleep etc. of the unit:
 
-.. csv-table::
-   :header: "Event", "Example"
-   :widths: 30, 20
-
-   "
-   ``<taskname>#<valuename>``
-   As described already, each task can produced one or more events, one for each measured value. You should not name your devices and value names so that the combination equals to any of the below listed system events!
-   ","
-
-   .. code-block:: html
-
-      on [DHT11Outside#Temperature]>20 do
-       GPIO,2,1
-      endon
-
-   "
-   "
-   ``System#Wake``
-   Triggered after power on.
-   ","
-
-   .. code-block:: html
-
-	   on System#Wake do
-       GPIO,15,1
-	   endon
-
-   "
-   "
-   ``System#Boot``
-   Triggered at boot time.
-   ","
-
-   .. code-block:: html
-
-	   on System#Boot do
-      GPIO,2,1
-      timerSet,1,30
-	   endon
-
-   "
-   "
-   ``System#Sleep``
-   Triggered just before the ESP goes to deep sleep.
-   ","
-
-   .. code-block:: html
-
-	   on System#Sleep do
-	    GPIO,2,0
-	   endon
-
-   "
-   "
-   ``MQTT#Connected``
-   Triggered when the ESP has connected to broker.
-   ","
-
-   .. code-block:: html
-
-	   on MQTT#Connected do
-	    Publish,%sysname%/status,First message!
-	   endon
-
-   "
-   "
-   ``MQTT#Disconnected``
-   Triggered when the ESP has disconnected from the broker.
-   ","
-
-   .. code-block:: html
-
-	   on MQTT#Disconnected do
-	    Reboot
-	   endon
-
-   "
-   "
-   ``MQTTimport#Connected``
-   Triggered when the ESP has connected to broker (the MQTT Import plugin uses a separate connection than the generic one).
-   ","
-
-   .. code-block:: html
-
-	   on MQTTimport#Connected do
-	    Publish,%sysname%/status,MQTT Import is now operational
-	   endon
-
-   "
-   "
-   ``MQTTimport#Disconnected``
-   Triggered when the ESP has disconnected from the broker (the MQTT Import plugin uses a separate connection than the generic one).
-   ","
-
-   .. code-block:: html
-
-	   on MQTTimport#Disconnected do
-	    Reboot
-	   endon
-
-   "
-   "
-   ``WiFi#Connected``
-   Triggered when the ESP has connected to Wi-Fi.
-   ","
-
-   .. code-block:: html
-
-	   on WiFi#Connected do
-	    SendToHTTP,url.com,80,/report.php?hash=123abc456&t=[temp2#out]
-	   endon
-
-   "
-   "
-   ``WiFi#ChangedAccesspoint``
-   Triggered when the ESP has changed to access point, will also trigger first time the unit connects to the Wi-Fi.
-   ","
-
-   .. code-block:: html
-
-	   on WiFi#ChangedAccesspoint do
-	    Publish,%sysname%/status,AP changed
-	   endon
-
-   "
-   "
-   ``Login#Failed``
-   Triggered when (someone) has tried to login to a ESP unit with admin password enabled, but have failed to enter correct password.
-   ","
-
-   .. code-block:: html
-
-	   on Login#Failed do
-	    Publish,%sysname%/warning,Intruder alert!
-	   endon
-
-   "
-   "
-   ``Time#Initialized``
-   Triggered the first time (after boot) NTP is updating the unit.
-   ","
-
-   .. code-block:: html
-
-	   on Time#Initialized do
-	    Publish,%sysname%/Time,%systime%
-	   endon
-
-   "
-   "
-   ``Time#Set``
-   Triggered when the time is set by an update from NTP.
-   ","
-
-   .. code-block:: html
-
-	   on Time#Set do
-	    Publish,%sysname%/Time,%systime%
-	    Publish,%sysname%/NTP,Updated time at: %systime%
-	   endon
-
-   "
-   "
-   ``Rules#Timer=``
-   As described already, triggered when a rules timer ends (setting a timer to 0 will disable the timer).
-   ","
-
-   .. code-block:: html
-
-	   on Rules#Timer=1 do
-	    GPIO,2,1
-	   endon
-
-   "
-   "
-   ``Clock#Time=``
-   Triggered every minute with day and time like: Mon,12:30 or Tue,14:45. You can define triggers on specific days or all days using 'All' for days indicator. You can also use wildcards in the time setting like All,**:00 to run every hour.
-   ","
-
-   .. code-block:: html
-
-	   on Clock#Time=All,12:00 do //will run once a day at noon
-	    GPIO,2,1
-	   endon
-
-	   on Clock#Time=All,**:30 do //will run half past every hour
-	    GPIO,2,1
-	   endon
-
-	   on Clock#Time=All,%sunrise% do //will run at sunrise  (%sunset% is also available)
-	    GPIO,2,1
-	   endon
-
-   "
+.. include:: ../Plugin/P000_events.repl
 
 Test
 ----
@@ -448,6 +255,19 @@ the code more readable:
 
  [DeviceName#ValueName]<<value> //These work...
  [DeviceName#ValueName] < <value> //the same...
+
+Special task names
+------------------
+
+You must not use the task name ``VAR`` as this is used for the internal
+variables. The variables set with the ``Let`` command will be available in rules
+as ``VAR#N`` where ``N`` is 1..16.
+
+Clock, Rules and System etc. are not recommended either since they are used in
+event names.
+
+Please observe that task names are case insensitive meaning that VAR, var, and Var etc.
+are all treated the same.
 
 Some working examples
 =====================
@@ -535,14 +355,82 @@ You could then use the command "ToggleGPIO" with dynamic GPIO numbers and state.
 
  http://<espeasyip>/control?cmd=event,ToggleGPIO=12,1
 
+Internal variables
+------------------
+
+A really great feature to use is the 16 internal variables. You set them like this:
+
+.. code-block:: html
+
+ Let,<n>,<value>
+
+Where n can be 1 to 16 and the value an float. To use the values in strings you can
+either use the ``%v7%`` syntax or ``[VAR#7]``. BUT for formulas you need to use the square
+brackets in order for it to compute, i.e. ``[VAR#12]``.
+
+
+Averaging filters
+-----------------
+
+You may want to clear peaks in otherwise jumpy measurements and if you cannot
+remove the jumpiness with hardware you might want to add a filter in the software.
+
+A **10 value average**:
+
+.. code-block:: html
+
+  On Temp#Value Do
+   Let,10,[VAR#9]
+   Let,9,[VAR#8]
+   Let,8,[VAR#7]
+   Let,7,[VAR#6]
+   Let,6,[VAR#5]
+   Let,5,[VAR#4]
+   Let,4,[VAR#3]
+   Let,3,[VAR#2]
+   Let,2,[VAR#1]
+   Let,1,[Temp#Value]
+   TaskValueSet,12,1,([VAR#1]+[VAR#2]+[VAR#3]+[VAR#4]+[VAR#5]+[VAR#6]+[VAR#7]+[VAR#8]+[VAR#9]+[VAR#10])/10
+  EndOn
+
+In the above example we use the sensor value of ``Temp#Value`` to get the trigger event,
+we then add all the previous 9 values to the internal variables and the newly acquired
+value to the first variable. We then summarize them and divide them by 10 and store it
+as a dummy variable (example is on task 12, value 1) which we use to publish the sliding
+value instead of the sensor value.
+
+Another filter could be to just use the previous value and **dilute** the new value with that one:
+
+.. code-block:: html
+
+  On Temp#Value Do
+    Let,2,[VAR#1]
+    Let,1,[Temp#Value]
+    TaskValueSet,12,1,(3*[VAR#1]+[VAR#2])/4
+  EndOn
+
+
+Yet another filter could be to add the new value to a **summarized average**:
+
+.. code-block:: html
+
+  On Temp#Value Do
+    Let,1,[Temp#Value]
+    TaskValueSet,12,1,([VAR#1]+3*[VAR#2])/4
+    Let,2,[Dummy#Value]
+  EndOn
+
+What you should use? That is a case by case question. Try them all and see which
+one suits your actual scenario the best.
+
 PIR and LDR
 -----------
 
 .. code-block:: html
 
- On PIR#Switch do
+ On PIR#State do
    if [LDR#Light]<500
-     gpio,16,[PIR#Switch]
+     gpio,16,[PIR#State]
    endif
  endon
 
@@ -553,9 +441,9 @@ PIR and LDR
 
 .. code-block:: html
 
- on PIR#Switch=1 do
+ on PIR#State=1 do
    if [LDR#Light]<500
-     gpio,16,[PIR#Switch]
+     gpio,16,[PIR#State]
    endif
  endon
 
@@ -738,7 +626,7 @@ to make things happen during certain hours of the day:
 
 .. code-block:: html
 
-  On Pir#Switch=1 do
+  On Pir#State=1 do
    If %systime% < 07:00:00
     Gpio,16,0
    Endif

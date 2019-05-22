@@ -1,3 +1,223 @@
+/*********************************************************************************************\
+   ESPEasy specific strings
+\*********************************************************************************************/
+
+String getUnknownString() { return F("Unknown"); }
+
+String getNodeTypeDisplayString(byte nodeType) {
+  switch (nodeType)
+  {
+    case NODE_TYPE_ID_ESP_EASY_STD:     return F("ESP Easy");
+    case NODE_TYPE_ID_ESP_EASYM_STD:    return F("ESP Easy Mega");
+    case NODE_TYPE_ID_ESP_EASY32_STD:   return F("ESP Easy 32");
+    case NODE_TYPE_ID_RPI_EASY_STD:     return F("RPI Easy");
+    case NODE_TYPE_ID_ARDUINO_EASY_STD: return F("Arduino Easy");
+    case NODE_TYPE_ID_NANO_EASY_STD:    return F("Nano Easy");
+  }
+  return "";
+}
+
+String getSettingsTypeString(SettingsType settingsType) {
+  switch (settingsType) {
+    case BasicSettings_Type:            return F("Settings");
+    case TaskSettings_Type:             return F("TaskSettings");
+    case CustomTaskSettings_Type:       return F("CustomTaskSettings");
+    case ControllerSettings_Type:       return F("ControllerSettings");
+    case CustomControllerSettings_Type: return F("CustomControllerSettings");
+    case NotificationSettings_Type:     return F("NotificationSettings");
+    default:
+      break;
+  }
+  return "";
+}
+
+String getMQTT_state() {
+  switch (MQTTclient.state()) {
+    case MQTT_CONNECTION_TIMEOUT     : return F("Connection timeout");
+    case MQTT_CONNECTION_LOST        : return F("Connection lost");
+    case MQTT_CONNECT_FAILED         : return F("Connect failed");
+    case MQTT_DISCONNECTED           : return F("Disconnected");
+    case MQTT_CONNECTED              : return F("Connected");
+    case MQTT_CONNECT_BAD_PROTOCOL   : return F("Connect bad protocol");
+    case MQTT_CONNECT_BAD_CLIENT_ID  : return F("Connect bad client_id");
+    case MQTT_CONNECT_UNAVAILABLE    : return F("Connect unavailable");
+    case MQTT_CONNECT_BAD_CREDENTIALS: return F("Connect bad credentials");
+    case MQTT_CONNECT_UNAUTHORIZED   : return F("Connect unauthorized");
+    default: break;
+  }
+  return "";
+}
+
+/********************************************************************************************\
+  Get system information
+  \*********************************************************************************************/
+String getLastBootCauseString() {
+  switch (lastBootCause)
+  {
+    case BOOT_CAUSE_MANUAL_REBOOT: return F("Manual reboot");
+    case BOOT_CAUSE_DEEP_SLEEP: //nobody should ever see this, since it should sleep again right away.
+       return F("Deep sleep");
+    case BOOT_CAUSE_COLD_BOOT:
+       return F("Cold boot");
+    case BOOT_CAUSE_EXT_WD:
+       return F("External Watchdog");
+  }
+  return getUnknownString();
+}
+
+#ifdef ESP32
+// See https://github.com/espressif/esp-idf/blob/master/components/esp32/include/rom/rtc.h
+String getResetReasonString(byte icore) {
+  bool isDEEPSLEEP_RESET(false);
+  switch (rtc_get_reset_reason( (RESET_REASON) icore)) {
+    case NO_MEAN                : return F("NO_MEAN");
+    case POWERON_RESET          : return F("Vbat power on reset");
+    case SW_RESET               : return F("Software reset digital core");
+    case OWDT_RESET             : return F("Legacy watch dog reset digital core");
+    case DEEPSLEEP_RESET        : isDEEPSLEEP_RESET = true; break;
+    case SDIO_RESET             : return F("Reset by SLC module, reset digital core");
+    case TG0WDT_SYS_RESET       : return F("Timer Group0 Watch dog reset digital core");
+    case TG1WDT_SYS_RESET       : return F("Timer Group1 Watch dog reset digital core");
+    case RTCWDT_SYS_RESET       : return F("RTC Watch dog Reset digital core");
+    case INTRUSION_RESET        : return F("Instrusion tested to reset CPU");
+    case TGWDT_CPU_RESET        : return F("Time Group reset CPU");
+    case SW_CPU_RESET           : return F("Software reset CPU");
+    case RTCWDT_CPU_RESET       : return F("RTC Watch dog Reset CPU");
+    case EXT_CPU_RESET          : return F("for APP CPU, reseted by PRO CPU");
+    case RTCWDT_BROWN_OUT_RESET : return F("Reset when the vdd voltage is not stable");
+    case RTCWDT_RTC_RESET       : return F("RTC Watch dog reset digital core and rtc module");
+    default: break;
+  }
+  if (isDEEPSLEEP_RESET) {
+    String reason = F("Deep Sleep, Wakeup reason (");
+    reason += rtc_get_wakeup_cause();
+    reason += ')';
+    return reason;
+  }
+  return getUnknownString();
+}
+#endif
+
+String getResetReasonString() {
+  #ifdef ESP32
+  String reason = F("CPU0: ");
+  reason += getResetReasonString(0);
+  reason += F(" CPU1: ");
+  reason += getResetReasonString(1);
+  return reason;
+  #else
+  return ESP.getResetReason();
+  #endif
+}
+
+uint32_t getFlashRealSizeInBytes() {
+  #if defined(ESP32)
+    return ESP.getFlashChipSize();
+  #else
+    return ESP.getFlashChipRealSize(); //ESP.getFlashChipSize();
+  #endif
+}
+
+String getSystemBuildString() {
+  String result;
+  result += BUILD;
+  result += ' ';
+  result += F(BUILD_NOTES);
+  return result;
+}
+
+String getPluginDescriptionString() {
+  String result;
+  #ifdef PLUGIN_BUILD_NORMAL
+    result += F(" [Normal]");
+  #endif
+  #ifdef PLUGIN_BUILD_TESTING
+    result += F(" [Testing]");
+  #endif
+  #ifdef PLUGIN_BUILD_DEV
+    result += F(" [Development]");
+  #endif
+  #ifdef PLUGIN_DESCR
+  result += " [";
+  result += F(PLUGIN_DESCR);
+  result += ']';
+  #endif
+  return result;
+}
+
+String getSystemLibraryString() {
+  String result;
+  #if defined(ESP32)
+    result += F("ESP32 SDK ");
+    result += ESP.getSdkVersion();
+  #else
+    result += F("ESP82xx Core ");
+    result += ESP.getCoreVersion();
+    result += F(", NONOS SDK ");
+    result += system_get_sdk_version();
+    result += F(", LWIP: ");
+    result += getLWIPversion();
+  #endif
+  if (puyaSupport()) {
+    result += F(" PUYA support");
+  }
+  return result;
+}
+
+#ifndef ESP32
+String getLWIPversion() {
+  String result;
+  result += LWIP_VERSION_MAJOR;
+  result += '.';
+  result += LWIP_VERSION_MINOR;
+  result += '.';
+  result += LWIP_VERSION_REVISION;
+  if (LWIP_VERSION_IS_RC) {
+    result += F("-RC");
+    result += LWIP_VERSION_RC;
+  } else if (LWIP_VERSION_IS_DEVELOPMENT) {
+    result += F("-dev");
+  }
+  return result;
+}
+#endif
+
+bool puyaSupport() {
+  bool supported = false;
+#ifdef PUYA_SUPPORT
+  // New support starting core 2.5.0
+  if (PUYA_SUPPORT) supported = true;
+#endif
+#ifdef PUYASUPPORT
+  // Old patch
+  supported = true;
+#endif
+  return supported;
+}
+
+uint8_t getFlashChipVendorId() {
+#ifdef PUYA_SUPPORT
+  return ESP.getFlashChipVendorId();
+#else
+  #if defined(ESP8266)
+    uint32_t flashChipId = ESP.getFlashChipId();
+    return (flashChipId & 0x000000ff);
+  #else
+    return 0xFF; // Not an existing function for ESP32
+  #endif
+#endif
+}
+
+bool flashChipVendorPuya() {
+  uint8_t vendorId = getFlashChipVendorId();
+  return vendorId == 0x85;  // 0x146085 PUYA
+}
+
+
+/*********************************************************************************************\
+ Memory management
+\*********************************************************************************************/
+
 // clean up tcp connections that are in TIME_WAIT status, to conserve memory
 // In future versions of WiFiClient it should be possible to call abort(), but
 // this feature is not in all upstream versions yet.
@@ -43,7 +263,7 @@ uint32_t getFreeStackWatermark() {
 bool canYield() { return true; }
 
 #else
-#if defined(ARDUINO_ESP8266_RELEASE_2_3_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_1)
+#ifdef CORE_PRE_2_4_2
 // All version before core 2.4.2
 extern "C" {
 #include <cont.h>
@@ -130,7 +350,7 @@ bool readyForSleep()
   return timeOutReached(timerAwakeFromDeepSleep + 1000 * Settings.deepSleep);
 }
 
-void deepSleep(int delay)
+void deepSleep(int dsdelay)
 {
 
   checkRAM(F("deepSleep"));
@@ -158,28 +378,35 @@ void deepSleep(int delay)
     }
   }
   saveUserVarToRTC();
-  deepSleepStart(delay); // Call deepSleepStart function after these checks
+  deepSleepStart(dsdelay); // Call deepSleepStart function after these checks
 }
 
-void deepSleepStart(int delay)
+void deepSleepStart(int dsdelay)
 {
   // separate function that is called from above function or directly from rules, usign deepSleep as a one-shot
   String event = F("System#Sleep");
   rulesProcessing(event);
 
-
   RTC.deepSleepState = 1;
   saveToRTC();
 
-  if (delay > 4294 || delay < 0)
-    delay = 4294;   //max sleep time ~1.2h
-
   addLog(LOG_LEVEL_INFO, F("SLEEP: Powering down to deepsleep..."));
+  delay(100); // give the node time to send above log message before going to sleep
   #if defined(ESP8266)
-    ESP.deepSleep((uint32_t)delay * 1000000, WAKE_RF_DEFAULT);
+    #if defined(CORE_POST_2_5_0)
+      uint64_t deepSleep_usec = dsdelay * 1000000ULL;
+      if ((deepSleep_usec > ESP.deepSleepMax()) || dsdelay < 0) {
+        deepSleep_usec = ESP.deepSleepMax();
+      }
+      ESP.deepSleepInstant(deepSleep_usec, WAKE_RF_DEFAULT);
+    #else
+      if (dsdelay > 4294 || dsdelay < 0)
+        dsdelay = 4294;   //max sleep time ~71 minutes
+      ESP.deepSleep((uint32_t)dsdelay * 1000000, WAKE_RF_DEFAULT);
+    #endif
   #endif
   #if defined(ESP32)
-    esp_sleep_enable_timer_wakeup((uint32_t)delay * 1000000);
+    esp_sleep_enable_timer_wakeup((uint32_t)dsdelay * 1000000);
     esp_deep_sleep_start();
   #endif
 }
@@ -229,6 +456,27 @@ int8_t getTaskIndexByName(const String& TaskNameSearch)
 /*********************************************************************************************\
    Device GPIO name functions to share flash strings
   \*********************************************************************************************/
+String formatGpioDirection(gpio_direction direction) {
+  switch (direction) {
+    case gpio_input:         return F("&larr; ");
+    case gpio_output:        return F("&rarr; ");
+    case gpio_bidirectional: return F("&#8644; ");
+  }
+  return "";
+}
+
+String formatGpioLabel(int gpio, bool includeWarning) {
+  int pinnr = -1;
+  bool input, output, warning;
+  if (getGpioInfo(gpio, pinnr, input, output, warning)) {
+    if (!includeWarning) {
+      return createGPIO_label(gpio, pinnr, true, true, false);
+    }
+    return createGPIO_label(gpio, pinnr, input, output, warning);
+  }
+  return "-";
+}
+
 String formatGpioName(const String& label, gpio_direction direction, bool optional) {
   int reserveLength = 5 /* "GPIO " */ + 8 /* "&#8644; " */ + label.length();
   if (optional) {
@@ -237,11 +485,7 @@ String formatGpioName(const String& label, gpio_direction direction, bool option
   String result;
   result.reserve(reserveLength);
   result += F("GPIO ");
-  switch (direction) {
-    case gpio_input:         result += F("&larr; "); break;
-    case gpio_output:        result += F("&rarr; "); break;
-    case gpio_bidirectional: result += F("&#8644; "); break;
-  }
+  result += formatGpioDirection(direction);
   result += label;
   if (optional)
     result += F("(optional)");
@@ -373,12 +617,12 @@ void setBitToUL(uint32_t& number, byte bitnr, bool value) {
 /*********************************************************************************************\
    report pin mode & state (info table) using json
   \*********************************************************************************************/
-String getPinStateJSON(boolean search, uint32_t key, const String& log, uint16_t noSearchValue)
+String getPinStateJSON(boolean search, uint32_t key, const String& log, int16_t noSearchValue)
 {
   checkRAM(F("getPinStateJSON"));
   printToWebJSON = true;
   byte mode = PIN_MODE_INPUT;
-  uint16_t value = noSearchValue;
+  int16_t value = noSearchValue;
   boolean found = false;
 
   if (search && existPortStatus(key))
@@ -498,9 +742,9 @@ void statusLED(boolean traffic)
 /********************************************************************************************\
   delay in milliseconds with background processing
   \*********************************************************************************************/
-void delayBackground(unsigned long delay)
+void delayBackground(unsigned long dsdelay)
 {
-  unsigned long timer = millis() + delay;
+  unsigned long timer = millis() + dsdelay;
   while (!timeOutReached(timer))
     backgroundtasks();
 }
@@ -724,11 +968,11 @@ bool GetArgvBeginEnd(const char *string, const unsigned int argc, int& pos_begin
   \*********************************************************************************************/
 #if defined(ARDUINO_ESP8266_RELEASE_2_3_0)
 void dump (uint32_t addr) { //Seems already included in core 2.4 ...
-  serialPrint (addr, HEX);
+  serialPrint (String(addr, HEX));
   serialPrint(": ");
   for (uint32_t a = addr; a < addr + 16; a++)
   {
-    serialPrint ( pgm_read_byte(a), HEX);
+    serialPrint ( String(pgm_read_byte(a), HEX));
     serialPrint (" ");
   }
   serialPrintln("");
@@ -851,8 +1095,8 @@ void ResetFactory()
   if (!ResetFactoryDefaultPreference.keepNetwork()) {
     Settings.clearNetworkSettings();
     // TD-er Reset access control
-    str2ip((char*)DEFAULT_IPRANGE_LOW, SecuritySettings.AllowedIPrangeLow);
-    str2ip((char*)DEFAULT_IPRANGE_HIGH, SecuritySettings.AllowedIPrangeHigh);
+    str2ip(F(DEFAULT_IPRANGE_LOW), SecuritySettings.AllowedIPrangeLow);
+    str2ip(F(DEFAULT_IPRANGE_HIGH), SecuritySettings.AllowedIPrangeHigh);
     SecuritySettings.IPblockLevel = DEFAULT_IP_BLOCK_LEVEL;
 
     #if DEFAULT_USE_STATIC_IP
@@ -1011,141 +1255,6 @@ unsigned long FreeMem(void)
     return ESP.getFreeHeap();
   #endif
 }
-
-/********************************************************************************************\
-  Get system information
-  \*********************************************************************************************/
-String getLastBootCauseString() {
-  switch (lastBootCause)
-  {
-    case BOOT_CAUSE_MANUAL_REBOOT: return F("Manual reboot");
-    case BOOT_CAUSE_DEEP_SLEEP: //nobody should ever see this, since it should sleep again right away.
-       return F("Deep sleep");
-    case BOOT_CAUSE_COLD_BOOT:
-       return F("Cold boot");
-    case BOOT_CAUSE_EXT_WD:
-       return F("External Watchdog");
-  }
-  return F("Unknown");
-}
-
-#ifdef ESP32
-// See https://github.com/espressif/esp-idf/blob/master/components/esp32/include/rom/rtc.h
-String getResetReasonString(byte icore) {
-  bool isDEEPSLEEP_RESET(false);
-  switch (rtc_get_reset_reason( (RESET_REASON) icore)) {
-    case NO_MEAN                : return F("NO_MEAN");
-    case POWERON_RESET          : return F("Vbat power on reset");
-    case SW_RESET               : return F("Software reset digital core");
-    case OWDT_RESET             : return F("Legacy watch dog reset digital core");
-    case DEEPSLEEP_RESET        : isDEEPSLEEP_RESET = true; break;
-    case SDIO_RESET             : return F("Reset by SLC module, reset digital core");
-    case TG0WDT_SYS_RESET       : return F("Timer Group0 Watch dog reset digital core");
-    case TG1WDT_SYS_RESET       : return F("Timer Group1 Watch dog reset digital core");
-    case RTCWDT_SYS_RESET       : return F("RTC Watch dog Reset digital core");
-    case INTRUSION_RESET        : return F("Instrusion tested to reset CPU");
-    case TGWDT_CPU_RESET        : return F("Time Group reset CPU");
-    case SW_CPU_RESET           : return F("Software reset CPU");
-    case RTCWDT_CPU_RESET       : return F("RTC Watch dog Reset CPU");
-    case EXT_CPU_RESET          : return F("for APP CPU, reseted by PRO CPU");
-    case RTCWDT_BROWN_OUT_RESET : return F("Reset when the vdd voltage is not stable");
-    case RTCWDT_RTC_RESET       : return F("RTC Watch dog reset digital core and rtc module");
-    default: break;
-  }
-  if (isDEEPSLEEP_RESET) {
-    String reason = F("Deep Sleep, Wakeup reason (");
-    reason += rtc_get_wakeup_cause();
-    reason += ')';
-    return reason;
-  }
-  return F("Unknown");
-}
-#endif
-
-String getResetReasonString() {
-  #ifdef ESP32
-  String reason = F("CPU0: ");
-  reason += getResetReasonString(0);
-  reason += F(" CPU1: ");
-  reason += getResetReasonString(1);
-  return reason;
-  #else
-  return ESP.getResetReason();
-  #endif
-}
-
-uint32_t getFlashRealSizeInBytes() {
-  #if defined(ESP32)
-    return ESP.getFlashChipSize();
-  #else
-    return ESP.getFlashChipRealSize(); //ESP.getFlashChipSize();
-  #endif
-}
-
-String getSystemBuildString() {
-  String result;
-  result += BUILD;
-  result += ' ';
-  result += F(BUILD_NOTES);
-  return result;
-}
-
-String getPluginDescriptionString() {
-  String result;
-  #ifdef PLUGIN_BUILD_NORMAL
-    result += F(" [Normal]");
-  #endif
-  #ifdef PLUGIN_BUILD_TESTING
-    result += F(" [Testing]");
-  #endif
-  #ifdef PLUGIN_BUILD_DEV
-    result += F(" [Development]");
-  #endif
-  #ifdef PLUGIN_DESCR
-  result += " [";
-  result += F(PLUGIN_DESCR);
-  result += ']';
-  #endif
-  return result;
-}
-
-String getSystemLibraryString() {
-  String result;
-  #if defined(ESP32)
-    result += F("ESP32 SDK ");
-    result += ESP.getSdkVersion();
-  #else
-    result += F("ESP82xx Core ");
-    result += ESP.getCoreVersion();
-    result += F(", NONOS SDK ");
-    result += system_get_sdk_version();
-    result += F(", LWIP: ");
-    result += getLWIPversion();
-  #endif
-  #ifdef PUYASUPPORT
-    result += F(" PUYA support");
-  #endif
-
-  return result;
-}
-
-#ifndef ESP32
-String getLWIPversion() {
-  String result;
-  result += LWIP_VERSION_MAJOR;
-  result += '.';
-  result += LWIP_VERSION_MINOR;
-  result += '.';
-  result += LWIP_VERSION_REVISION;
-  if (LWIP_VERSION_IS_RC) {
-    result += F("-RC");
-    result += LWIP_VERSION_RC;
-  } else if (LWIP_VERSION_IS_DEVELOPMENT) {
-    result += F("-dev");
-  }
-  return result;
-}
-#endif
 
 
 
@@ -1329,12 +1438,16 @@ void setLogLevelFor(byte destination, byte logLevel) {
 void updateLogLevelCache() {
   byte max_lvl = 0;
   if (log_to_serial_disabled) {
-    Serial.setDebugOutput(false);
+    if (Settings.UseSerial) {
+      Serial.setDebugOutput(false);
+    }
   } else {
     max_lvl = _max(max_lvl, Settings.SerialLogLevel);
-    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE) {
+#ifndef BUILD_NO_DEBUG
+    if (Settings.UseSerial && Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE) {
       Serial.setDebugOutput(true);
     }
+#endif
   }
   max_lvl = _max(max_lvl, Settings.SyslogLevel);
   if (Logging.logActiveRead()) {
@@ -1449,114 +1562,12 @@ void delayedReboot(int rebootDelay)
 void reboot() {
   // FIXME TD-er: Should network connections be actively closed or does this introduce new issues?
   flushAndDisconnectAllClients();
+  SPIFFS.end();
   #if defined(ESP32)
     ESP.restart();
   #else
     ESP.reset();
   #endif
-}
-
-
-/********************************************************************************************\
-  Save RTC struct to RTC memory
-  \*********************************************************************************************/
-boolean saveToRTC()
-{
-  #if defined(ESP32)
-    return false;
-  #else
-    if (!system_rtc_mem_write(RTC_BASE_STRUCT, (byte*)&RTC, sizeof(RTC)) || !readFromRTC())
-    {
-      addLog(LOG_LEVEL_ERROR, F("RTC  : Error while writing to RTC"));
-      return(false);
-    }
-    else
-    {
-      return(true);
-    }
-  #endif
-}
-
-
-/********************************************************************************************\
-  Initialize RTC memory
-  \*********************************************************************************************/
-void initRTC()
-{
-  memset(&RTC, 0, sizeof(RTC));
-  RTC.ID1 = 0xAA;
-  RTC.ID2 = 0x55;
-  saveToRTC();
-
-  memset(&UserVar, 0, sizeof(UserVar));
-  saveUserVarToRTC();
-}
-
-/********************************************************************************************\
-  Read RTC struct from RTC memory
-  \*********************************************************************************************/
-boolean readFromRTC()
-{
-  #if defined(ESP32)
-    return false;
-  #else
-    if (!system_rtc_mem_read(RTC_BASE_STRUCT, (byte*)&RTC, sizeof(RTC)))
-      return(false);
-    return (RTC.ID1 == 0xAA && RTC.ID2 == 0x55);
-  #endif
-}
-
-
-/********************************************************************************************\
-  Save values to RTC memory
-\*********************************************************************************************/
-boolean saveUserVarToRTC()
-{
-  #if defined(ESP32)
-    return false;
-  #else
-    //addLog(LOG_LEVEL_DEBUG, F("RTCMEM: saveUserVarToRTC"));
-    byte* buffer = (byte*)&UserVar;
-    size_t size = sizeof(UserVar);
-    uint32_t sum = getChecksum(buffer, size);
-    boolean ret = system_rtc_mem_write(RTC_BASE_USERVAR, buffer, size);
-    ret &= system_rtc_mem_write(RTC_BASE_USERVAR+(size>>2), (byte*)&sum, 4);
-    return ret;
-  #endif
-}
-
-
-/********************************************************************************************\
-  Read RTC struct from RTC memory
-\*********************************************************************************************/
-boolean readUserVarFromRTC()
-{
-  #if defined(ESP32)
-    return false;
-  #else
-    //addLog(LOG_LEVEL_DEBUG, F("RTCMEM: readUserVarFromRTC"));
-    byte* buffer = (byte*)&UserVar;
-    size_t size = sizeof(UserVar);
-    boolean ret = system_rtc_mem_read(RTC_BASE_USERVAR, buffer, size);
-    uint32_t sumRAM = getChecksum(buffer, size);
-    uint32_t sumRTC = 0;
-    ret &= system_rtc_mem_read(RTC_BASE_USERVAR+(size>>2), (byte*)&sumRTC, 4);
-    if (!ret || sumRTC != sumRAM)
-    {
-      addLog(LOG_LEVEL_ERROR, F("RTC  : Checksum error on reading RTC user var"));
-      memset(buffer, 0, size);
-    }
-    return ret;
-  #endif
-}
-
-
-uint32_t getChecksum(byte* buffer, size_t size)
-{
-  uint32_t sum = 0x82662342;   //some magic to avoid valid checksum on new, uninitialized ESP
-  for (size_t i=0; i<size; i++)
-    sum += buffer[i];
-  return sum;
 }
 
 
@@ -1894,6 +1905,7 @@ void transformValue(
           newString += ' ';
       }
       {
+#ifndef BUILD_NO_DEBUG
         if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
           String logFormatted = F("DEBUG: Formatted String='");
           logFormatted += newString;
@@ -1901,6 +1913,7 @@ void transformValue(
           logFormatted += '\'';
           addLog(LOG_LEVEL_DEBUG, logFormatted);
         }
+#endif
       }
     }
   }
@@ -1908,12 +1921,14 @@ void transformValue(
 
   newString += String(value);
   {
+#ifndef BUILD_NO_DEBUG
     if (loglevelActiveFor(LOG_LEVEL_DEBUG_DEV)) {
       String logParsed = F("DEBUG DEV: Parsed String='");
       logParsed += newString;
       logParsed += '\'';
       addLog(LOG_LEVEL_DEBUG_DEV, logParsed);
     }
+#endif
   }
   checkRAM(F("transformValue2"));
 }
@@ -2263,7 +2278,9 @@ int CalculateParam(const char *TmpStr) {
           log += round(param);
           addLog(LOG_LEVEL_ERROR, log);
         }
-      } else {
+      }
+#ifndef BUILD_NO_DEBUG
+        else {
       if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
         String log = F("CALCULATE PARAM: ");
         log += TmpStr;
@@ -2272,6 +2289,7 @@ int CalculateParam(const char *TmpStr) {
         addLog(LOG_LEVEL_DEBUG, log);
       }
     }
+#endif
     returnValue=round(param); //return integer only as it's valid only for device and task id
   }
   return returnValue;
@@ -2304,7 +2322,9 @@ void SendValueLogger(byte TaskIndex)
       logger += "\r\n";
     }
 
+#ifndef BUILD_NO_DEBUG
     addLog(LOG_LEVEL_DEBUG, logger);
+#endif
   }
 
 #ifdef FEATURE_SD
@@ -2378,6 +2398,7 @@ class RamTracker{
        if (writePtr >= TRACEENTRIES) writePtr=0;          // inc write pointer and wrap around too.
     };
    void getTraceBuffer(){                                // return giant strings, one line per trace. Add stremToWeb method to avoid large strings.
+#ifndef BUILD_NO_DEBUG
       if (loglevelActiveFor(LOG_LEVEL_DEBUG_DEV)) {
         String retval="Memtrace\n";
         for (int i = 0; i< TRACES; i++){
@@ -2390,6 +2411,7 @@ class RamTracker{
           retval="";
         }
       }
+#endif
     }
 }myRamTracker;                                              // instantiate class. (is global now)
 
@@ -2662,6 +2684,7 @@ void ArduinoOTAInit()
       reboot();
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    if (Settings.UseSerial)
       Serial.printf("OTA  : Progress %u%%\r", (progress / (total / 100)));
   });
 
@@ -2710,6 +2733,25 @@ int calc_CRC16(const char *ptr, int count)
     }
     return crc;
 }
+
+uint32_t calc_CRC32(const uint8_t *data, size_t length) {
+  uint32_t crc = 0xffffffff;
+  while (length--) {
+    uint8_t c = *data++;
+    for (uint32_t i = 0x80; i > 0; i >>= 1) {
+      bool bit = crc & 0x80000000;
+      if (c & i) {
+        bit = !bit;
+      }
+      crc <<= 1;
+      if (bit) {
+        crc ^= 0x04c11db7;
+      }
+    }
+  }
+  return crc;
+}
+
 
 // Compute the dew point temperature, given temperature and humidity (temp in Celcius)
 // Formula: http://www.ajdesigner.com/phphumidity/dewpoint_equation_dewpoint_temperature.php
