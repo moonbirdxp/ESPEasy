@@ -66,6 +66,13 @@ const uint8_t kKelvinatorXfan = 1 << kKelvinatorXfanOffset;
 const uint8_t kKelvinatorTurboOffset = 4;
 const uint8_t kKelvinatorTurbo = 1 << kKelvinatorTurboOffset;
 
+using irutils::addBoolToString;
+using irutils::addIntToString;
+using irutils::addLabeledString;
+using irutils::addModeToString;
+using irutils::addFanToString;
+using irutils::addTempToString;
+
 #if SEND_KELVINATOR
 // Send a Kelvinator A/C message.
 //
@@ -118,9 +125,9 @@ void IRsend::sendKelvinator(const unsigned char data[], const uint16_t nbytes,
 }
 #endif  // SEND_KELVINATOR
 
-IRKelvinatorAC::IRKelvinatorAC(uint16_t pin) : _irsend(pin) {
-  this->stateReset();
-}
+IRKelvinatorAC::IRKelvinatorAC(const uint16_t pin, const bool inverted,
+                               const bool use_modulation)
+    : _irsend(pin, inverted, use_modulation) { this->stateReset(); }
 
 void IRKelvinatorAC::stateReset(void) {
   for (uint8_t i = 0; i < kKelvinatorStateLength; i++) remote_state[i] = 0x0;
@@ -416,30 +423,20 @@ stdAc::state_t IRKelvinatorAC::toCommon(void) {
 String IRKelvinatorAC::toString(void) {
   String result = "";
   result.reserve(160);  // Reserve some heap for the string to reduce fragging.
-  result += IRutils::acBoolToString(getPower(), F("Power"), false);
-  result += IRutils::acModeToString(getMode(), kKelvinatorAuto, kKelvinatorCool,
-                                    kKelvinatorHeat, kKelvinatorDry,
-                                    kKelvinatorFan);
-  result += F(", Temp: ");
-  result += uint64ToString(getTemp());
-  result += F("C, Fan: ");
-  result += uint64ToString(getFan());
-  switch (getFan()) {
-    case kKelvinatorFanAuto:
-      result += F(" (AUTO)");
-      break;
-    case kKelvinatorFanMax:
-      result += F(" (MAX)");
-      break;
-  }
-  result += IRutils::acBoolToString(getTurbo(), F("Turbo"));
-  result += IRutils::acBoolToString(getQuiet(), F("Quiet"));
-  result += IRutils::acBoolToString(getXFan(), F("XFan"));
-  result += IRutils::acBoolToString(getIonFilter(), F("IonFilter"));
-  result += IRutils::acBoolToString(getLight(), F("Light"));
-  result += IRutils::acBoolToString(getSwingHorizontal(),
-                                    F("Swing (Horizontal)"));
-  result += IRutils::acBoolToString(getSwingVertical(), F("Swing (Vertical)"));
+  result += addBoolToString(getPower(), F("Power"), false);
+  result += addModeToString(getMode(), kKelvinatorAuto, kKelvinatorCool,
+                            kKelvinatorHeat, kKelvinatorDry, kKelvinatorFan);
+  result += addTempToString(getTemp());
+  result += addFanToString(getFan(), kKelvinatorFanMax, kKelvinatorFanMin,
+                           kKelvinatorFanAuto, kKelvinatorFanAuto,
+                           kKelvinatorBasicFanMax);
+  result += addBoolToString(getTurbo(), F("Turbo"));
+  result += addBoolToString(getQuiet(), F("Quiet"));
+  result += addBoolToString(getXFan(), F("XFan"));
+  result += addBoolToString(getIonFilter(), F("IonFilter"));
+  result += addBoolToString(getLight(), F("Light"));
+  result += addBoolToString(getSwingHorizontal(), F("Swing(H)"));
+  result += addBoolToString(getSwingVertical(), F("Swing(V)"));
   return result;
 }
 
@@ -478,7 +475,7 @@ bool IRrecv::decodeKelvinator(decode_results *results, uint16_t nbits,
                         kKelvinatorBitMark, kKelvinatorOneSpace,
                         kKelvinatorBitMark, kKelvinatorZeroSpace,
                         0, 0, false,
-                        kTolerance, kMarkExcess, false);
+                        _tolerance, kMarkExcess, false);
     if (used == 0) return false;
     offset += used;
     pos += 4;
@@ -488,26 +485,20 @@ bool IRrecv::decodeKelvinator(decode_results *results, uint16_t nbits,
         &(results->rawbuf[offset]), kKelvinatorCmdFooterBits,
         kKelvinatorBitMark, kKelvinatorOneSpace,
         kKelvinatorBitMark, kKelvinatorZeroSpace,
-        kTolerance, kMarkExcess, false);
+        _tolerance, kMarkExcess, false);
     if (data_result.success == false) return false;
     if (data_result.data != kKelvinatorCmdFooter) return false;
     offset += data_result.used;
 
-    // Interdata gap.
-    if (!matchMark(results->rawbuf[offset++], kKelvinatorBitMark))
-      return false;
-    if (!matchSpace(results->rawbuf[offset++], kKelvinatorGapSpace))
-      return false;
-
-    // Data (Options) (32 bits)
+    // Gap + Data (Options) (32 bits)
     used = matchGeneric(results->rawbuf + offset, results->state + pos,
                         results->rawlen - offset, 32,
-                        0, 0,
+                        kKelvinatorBitMark, kKelvinatorGapSpace,
                         kKelvinatorBitMark, kKelvinatorOneSpace,
                         kKelvinatorBitMark, kKelvinatorZeroSpace,
                         kKelvinatorBitMark, kKelvinatorGapSpace * 2,
                         s > 0,
-                        kTolerance, kMarkExcess, false);
+                        _tolerance, kMarkExcess, false);
     if (used == 0) return false;
     offset += used;
     pos += 4;

@@ -29,6 +29,14 @@ const uint16_t kGreeMsgSpace = 19000;
 const uint8_t kGreeBlockFooter = 0b010;
 const uint8_t kGreeBlockFooterBits = 3;
 
+using irutils::addBoolToString;
+using irutils::addIntToString;
+using irutils::addLabeledString;
+using irutils::addModeToString;
+using irutils::addFanToString;
+using irutils::addTempToString;
+using irutils::minsToString;
+
 #if SEND_GREE
 // Send a Gree Heat Pump message.
 //
@@ -106,7 +114,12 @@ void IRsend::sendGree(const uint64_t data, const uint16_t nbits,
 }
 #endif  // SEND_GREE
 
-IRGreeAC::IRGreeAC(uint16_t pin) : _irsend(pin) { stateReset(); }
+IRGreeAC::IRGreeAC(const uint16_t pin, const gree_ac_remote_model_t model,
+                   const bool inverted, const bool use_modulation)
+    : _irsend(pin, inverted, use_modulation) {
+  stateReset();
+  setModel(model);
+}
 
 void IRGreeAC::stateReset(void) {
   // This resets to a known-good state to Power Off, Fan Auto, Mode Auto, 25C.
@@ -119,6 +132,7 @@ void IRGreeAC::stateReset(void) {
 }
 
 void IRGreeAC::fixup(void) {
+  setPower(getPower());  // Redo the power bits as they differ between models.
   checksum();  // Calculate the checksums
 }
 
@@ -140,6 +154,13 @@ void IRGreeAC::setRaw(const uint8_t new_code[]) {
   for (uint8_t i = 0; i < kGreeStateLength; i++) {
     remote_state[i] = new_code[i];
   }
+  // We can only detect the difference between models when the power is on.
+  if (getPower()) {
+    if (remote_state[2] & kGreePower2Mask)
+      _model = gree_ac_remote_model_t::YAW1F;
+    else
+      _model = gree_ac_remote_model_t::YBOFB;
+  }
 }
 
 void IRGreeAC::checksum(const uint16_t length) {
@@ -156,33 +177,45 @@ void IRGreeAC::checksum(const uint16_t length) {
 //   A boolean.
 bool IRGreeAC::validChecksum(const uint8_t state[], const uint16_t length) {
   // Top 4 bits of the last byte in the state is the state's checksum.
-  if (state[length - 1] >> 4 ==
-      IRKelvinatorAC::calcBlockChecksum(state, length))
-    return true;
-  else
-    return false;
+  return (state[length - 1] >> 4 == IRKelvinatorAC::calcBlockChecksum(state,
+                                                                      length));
 }
 
-void IRGreeAC::on(void) {
-  remote_state[0] |= kGreePower1Mask;
-  remote_state[2] |= kGreePower2Mask;
+void IRGreeAC::setModel(const gree_ac_remote_model_t model) {
+  switch (model) {
+    case gree_ac_remote_model_t::YAW1F:
+    case gree_ac_remote_model_t::YBOFB:
+      _model = model; break;
+    default:
+      setModel(gree_ac_remote_model_t::YAW1F);
+  }
 }
 
-void IRGreeAC::off(void) {
-  remote_state[0] &= ~kGreePower1Mask;
-  remote_state[2] &= ~kGreePower2Mask;
+gree_ac_remote_model_t IRGreeAC::getModel(void) {
+  return _model;
 }
+
+void IRGreeAC::on(void) { setPower(true); }
+
+void IRGreeAC::off(void) { setPower(false); }
 
 void IRGreeAC::setPower(const bool on) {
-  if (on)
-    this->on();
-  else
-    this->off();
+  if (on) {
+    remote_state[0] |= kGreePower1Mask;
+    switch (_model) {
+      case gree_ac_remote_model_t::YBOFB: break;
+      default:
+        remote_state[2] |= kGreePower2Mask;
+    }
+  } else {
+    remote_state[0] &= ~kGreePower1Mask;
+    remote_state[2] &= ~kGreePower2Mask;  // May not be needed. See #814
+  }
 }
 
 bool IRGreeAC::getPower(void) {
-  return (remote_state[0] & kGreePower1Mask) &&
-         (remote_state[2] & kGreePower2Mask);
+  //  See #814. Not checking/requiring: (remote_state[2] & kGreePower2Mask)
+  return remote_state[0] & kGreePower1Mask;
 }
 
 // Set the temp. in deg C
@@ -190,12 +223,13 @@ void IRGreeAC::setTemp(const uint8_t temp) {
   uint8_t new_temp = std::max((uint8_t)kGreeMinTemp, temp);
   new_temp = std::min((uint8_t)kGreeMaxTemp, new_temp);
   if (getMode() == kGreeAuto) new_temp = 25;
-  remote_state[1] = (remote_state[1] & 0xF0U) | (new_temp - kGreeMinTemp);
+  remote_state[1] = (remote_state[1] & ~kGreeTempMask) |
+                    (new_temp - kGreeMinTemp);
 }
 
 // Return the set temp. in deg C
 uint8_t IRGreeAC::getTemp(void) {
-  return ((remote_state[1] & 0xFU) + kGreeMinTemp);
+  return ((remote_state[1] & kGreeTempMask) + kGreeMinTemp);
 }
 
 // Set the speed of the fan, 0-3, 0 is auto, 1-3 is the speed
@@ -327,6 +361,44 @@ uint8_t IRGreeAC::getSwingVerticalPosition(void) {
   return remote_state[4] & kGreeSwingPosMask;
 }
 
+void IRGreeAC::setTimerEnabled(const bool on) {
+  if (on)
+    remote_state[1] |= kGreeTimerEnabledBit;
+  else
+    remote_state[1] &= ~kGreeTimerEnabledBit;
+}
+
+bool IRGreeAC::getTimerEnabled(void) {
+  return remote_state[1] & kGreeTimerEnabledBit;
+}
+
+// Returns the number of minutes the timer is set for.
+uint16_t IRGreeAC::getTimer(void) {
+  uint16_t hrs = irutils::bcdToUint8(
+      (remote_state[2] & kGreeTimerHoursMask) |
+      ((remote_state[1] & kGreeTimerTensHrMask) >> 1));
+  return hrs * 60 + ((remote_state[1] & kGreeTimerHalfHrBit) ? 30 : 0);
+}
+
+// Set the A/C's timer to turn off in X many minutes.
+// Stores time internally in 30 min units.
+//   e.g. 5 mins means 0 (& Off), 95 mins is  90 mins (& On). Max is 24 hours.
+//
+// Args:
+//   minutes: The number of minutes the timer should be set for.
+void IRGreeAC::setTimer(const uint16_t minutes) {
+  // Clear the previous settings.
+  remote_state[1] &= ~kGreeTimer1Mask;
+  remote_state[2] &= ~kGreeTimerHoursMask;
+  uint16_t mins = std::min(kGreeTimerMax, minutes);  // Bounds check.
+  setTimerEnabled(mins >= 30);  // Timer is enabled when >= 30 mins.
+  uint8_t hours = mins / 60;
+  uint8_t halfhour = (mins % 60) < 30 ? 0 : 1;
+  // Set the "tens" digit of hours & the half hour.
+  remote_state[1] |= (((hours / 10) << 1) | halfhour) << 4;
+  // Set the "units" digit of hours.
+  remote_state[2] |= (hours % 10);
+}
 
 // Convert a standard A/C mode into its native mode.
 uint8_t IRGreeAC::convertMode(const stdAc::opmode_t mode) {
@@ -415,7 +487,7 @@ stdAc::swingv_t IRGreeAC::toCommonSwingV(const uint8_t pos) {
 stdAc::state_t IRGreeAC::toCommon(void) {
   stdAc::state_t result;
   result.protocol = decode_type_t::GREE;
-  result.model = -1;  // No models used.
+  result.model = this->getModel();
   result.power = this->getPower();
   result.mode = this->toCommonMode(this->getMode());
   result.celsius = true;
@@ -443,32 +515,27 @@ stdAc::state_t IRGreeAC::toCommon(void) {
 String IRGreeAC::toString(void) {
   String result = "";
   result.reserve(150);  // Reserve some heap for the string to reduce fragging.
-  result += IRutils::acBoolToString(getPower(), F("Power"), false);
-  result += IRutils::acModeToString(getMode(), kGreeAuto,
-                                    kGreeCool, kGreeHeat,
-                                    kGreeDry, kGreeFan);
-  result += F(", Temp: ");
-  result += uint64ToString(getTemp());
-  result += F("C, Fan: ");
-  result += uint64ToString(getFan());
-  switch (getFan()) {
-    case 0:
-      result += F(" (AUTO)");
-      break;
-    case kGreeFanMax:
-      result += F(" (MAX)");
-      break;
+  result += addIntToString(getModel(), F("Model"), false);
+  switch (getModel()) {
+    case gree_ac_remote_model_t::YAW1F: result += F(" (YAW1F)"); break;
+    case gree_ac_remote_model_t::YBOFB: result += F(" (YBOFB)"); break;
+    default: result += F(" (UNKNOWN)");
   }
-  result += IRutils::acBoolToString(getTurbo(), F("Turbo"));
-  result += IRutils::acBoolToString(getIFeel(), F("IFeel"));
-  result += IRutils::acBoolToString(getWiFi(), F("WiFi"));
-  result += IRutils::acBoolToString(getXFan(), F("XFan"));
-  result += IRutils::acBoolToString(getLight(), F("Light"));
-  result += IRutils::acBoolToString(getSleep(), F("Sleep"));
-  result += F(", Swing Vertical Mode: ");
-  result += this->getSwingVerticalAuto() ? F("Auto") : F("Manual");
-  result += F(", Swing Vertical Pos: ");
-  result += uint64ToString(getSwingVerticalPosition());
+  result += addBoolToString(getPower(), F("Power"));
+  result += addModeToString(getMode(), kGreeAuto, kGreeCool, kGreeHeat,
+                            kGreeDry, kGreeFan);
+  result += addTempToString(getTemp());
+  result += addFanToString(getFan(), kGreeFanMax, kGreeFanMin, kGreeFanAuto,
+                           kGreeFanAuto, kGreeFanMed);
+  result += addBoolToString(getTurbo(), F("Turbo"));
+  result += addBoolToString(getIFeel(), F("IFeel"));
+  result += addBoolToString(getWiFi(), F("WiFi"));
+  result += addBoolToString(getXFan(), F("XFan"));
+  result += addBoolToString(getLight(), F("Light"));
+  result += addBoolToString(getSleep(), F("Sleep"));
+  result += addLabeledString(getSwingVerticalAuto() ? F("Auto") : F("Manual"),
+                             F("Swing Vertical Mode"));
+  result += addIntToString(getSwingVerticalPosition(), F("Swing Vertical Pos"));
   switch (getSwingVerticalPosition()) {
     case kGreeSwingLastPos:
       result += F(" (Last Pos)");
@@ -477,6 +544,11 @@ String IRGreeAC::toString(void) {
       result += F(" (Auto)");
       break;
   }
+  result += F(", Timer: ");
+  if (getTimerEnabled())
+    result += minsToString(getTimer());
+  else
+    result += F("Off");
   return result;
 }
 
@@ -511,7 +583,7 @@ bool IRrecv::decodeGree(decode_results* results, uint16_t nbits, bool strict) {
                       kGreeBitMark, kGreeOneSpace,
                       kGreeBitMark, kGreeZeroSpace,
                       0, 0, false,
-                      kTolerance, kMarkExcess, false);
+                      _tolerance, kMarkExcess, false);
   if (used == 0) return false;
   offset += used;
 
@@ -519,7 +591,7 @@ bool IRrecv::decodeGree(decode_results* results, uint16_t nbits, bool strict) {
   match_result_t data_result;
   data_result = matchData(&(results->rawbuf[offset]), kGreeBlockFooterBits,
                           kGreeBitMark, kGreeOneSpace, kGreeBitMark,
-                          kGreeZeroSpace, kTolerance, kMarkExcess, false);
+                          kGreeZeroSpace, _tolerance, kMarkExcess, false);
   if (data_result.success == false) return false;
   if (data_result.data != kGreeBlockFooter) return false;
   offset += data_result.used;
@@ -531,7 +603,7 @@ bool IRrecv::decodeGree(decode_results* results, uint16_t nbits, bool strict) {
                     kGreeBitMark, kGreeOneSpace,
                     kGreeBitMark, kGreeZeroSpace,
                     kGreeBitMark, kGreeMsgSpace, true,
-                    kTolerance, kMarkExcess, false)) return false;
+                    _tolerance, kMarkExcess, false)) return false;
 
   // Compliance
   if (strict) {

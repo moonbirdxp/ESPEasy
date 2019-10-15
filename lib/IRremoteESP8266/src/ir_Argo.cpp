@@ -22,6 +22,12 @@ const uint16_t kArgoOneSpace = 2200;
 const uint16_t kArgoZeroSpace = 900;
 const uint32_t kArgoGap = kDefaultMessageGap;  // Made up value. Complete guess.
 
+using irutils::addBoolToString;
+using irutils::addIntToString;
+using irutils::addLabeledString;
+using irutils::addModeToString;
+using irutils::addTempToString;
+
 #if SEND_ARGO
 // Send an Argo A/C message.
 //
@@ -41,7 +47,9 @@ void IRsend::sendArgo(const unsigned char data[], const uint16_t nbytes,
 }
 #endif  // SEND_ARGO
 
-IRArgoAC::IRArgoAC(const uint16_t pin) : _irsend(pin) { this->stateReset(); }
+IRArgoAC::IRArgoAC(const uint16_t pin, const bool inverted,
+                   const bool use_modulation)
+      : _irsend(pin, inverted, use_modulation) { this->stateReset(); }
 
 void IRArgoAC::begin(void) { _irsend.begin(); }
 
@@ -333,61 +341,56 @@ stdAc::state_t IRArgoAC::toCommon(void) {
 }
 
 // Convert the internal state into a human readable string.
-String IRArgoAC::toString() {
+String IRArgoAC::toString(void) {
   String result = "";
   result.reserve(100);  // Reserve some heap for the string to reduce fragging.
-  result += IRutils::acBoolToString(getPower(), F("Power"), false);
-  result += F(", Mode: ");
-  result += uint64ToString(getMode());
+  result += addBoolToString(getPower(), F("Power"), false);
+  result += addIntToString(getMode(), F("Mode"));
   switch (getMode()) {
     case kArgoAuto:
-      result += F(" (AUTO)");
+      result += F(" (Auto)");
       break;
     case kArgoCool:
-      result += F(" (COOL)");
+      result += F(" (Cool)");
       break;
     case kArgoHeat:
-      result += F(" (HEAT)");
+      result += F(" (Heat)");
       break;
     case kArgoDry:
-      result += F(" (DRY)");
+      result += F(" (Dry)");
       break;
     case kArgoHeatAuto:
-      result += F(" (HEATAUTO)");
+      result += F(" (Heat Auto)");
       break;
     case kArgoOff:
-      result += F(" (OFF)");
+      result += F(" (Off)");
       break;
     default:
       result += F(" (UNKNOWN)");
   }
-  result += F(", Fan: ");
-  result += uint64ToString(getFan());
+  result += addIntToString(getFan(), F("Fan"));
   switch (getFan()) {
     case kArgoFanAuto:
-      result += F(" (AUTO)");
+      result += F(" (Auto)");
       break;
     case kArgoFan3:
-      result += F(" (MAX)");
+      result += F(" (Max)");
       break;
     case kArgoFan1:
-      result += F(" (MIN)");
+      result += F(" (Min)");
       break;
     case kArgoFan2:
-      result += F(" (MED)");
+      result += F(" (Med)");
       break;
     default:
       result += F(" (UNKNOWN)");
   }
-  result += F(", Temp: ");
-  result += uint64ToString(getTemp());
-  result += 'C';
-  result += F(", Room Temp: ");
-  result += uint64ToString(getRoomTemp());
-  result += 'C';
-  result += IRutils::acBoolToString(getMax(), F("Max"));
-  result += IRutils::acBoolToString(getiFeel(), F("iFeel"));
-  result += IRutils::acBoolToString(getNight(), F("Night"));
+  result += addTempToString(getTemp());
+  result += F(", Room ");
+  result += addTempToString(getRoomTemp(), true, false);
+  result += addBoolToString(getMax(), F("Max"));
+  result += addBoolToString(getiFeel(), F("iFeel"));
+  result += addBoolToString(getNight(), F("Night"));
   return result;
 }
 
@@ -419,7 +422,7 @@ bool IRrecv::decodeArgo(decode_results *results, const uint16_t nbits,
                     kArgoBitMark, kArgoOneSpace,
                     kArgoBitMark, kArgoZeroSpace,
                     0, 0,  // Footer (None, allegedly. This seems very wrong.)
-                    true, kTolerance, 0, false)) return false;
+                    true, _tolerance, 0, false)) return false;
 
   // Compliance
   // Verify we got a valid checksum.

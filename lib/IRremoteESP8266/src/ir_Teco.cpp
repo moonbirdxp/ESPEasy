@@ -20,6 +20,13 @@ const uint16_t kTecoOneSpace = 1650;
 const uint16_t kTecoZeroSpace = 580;
 const uint32_t kTecoGap = kDefaultMessageGap;  // Made-up value. Just a guess.
 
+using irutils::addBoolToString;
+using irutils::addFanToString;
+using irutils::addIntToString;
+using irutils::addLabeledString;
+using irutils::addModeToString;
+using irutils::addTempToString;
+
 #if SEND_TECO
 // Send a Teco A/C message.
 //
@@ -36,7 +43,9 @@ void IRsend::sendTeco(const uint64_t data, const uint16_t nbits,
 #endif  // SEND_TECO
 
 // Class for decoding and constructing Teco AC messages.
-IRTecoAc::IRTecoAc(const uint16_t pin) : _irsend(pin) { this->stateReset(); }
+IRTecoAc::IRTecoAc(const uint16_t pin, const bool inverted,
+                   const bool use_modulation)
+    : _irsend(pin, inverted, use_modulation) { this->stateReset(); }
 
 void IRTecoAc::begin(void) { _irsend.begin(); }
 
@@ -55,19 +64,18 @@ uint64_t IRTecoAc::getRaw(void) { return remote_state; }
 
 void IRTecoAc::setRaw(const uint64_t new_code) { remote_state = new_code; }
 
-void IRTecoAc::on(void) { remote_state |= kTecoPower; }
+void IRTecoAc::on(void) { setPower(true); }
 
-void IRTecoAc::off(void) { remote_state &= ~kTecoPower; }
+void IRTecoAc::off(void) { setPower(false); }
 
 void IRTecoAc::setPower(const bool on) {
   if (on)
-    this->on();
+    remote_state |= kTecoPower;
   else
-    this->off();
+    remote_state &= ~kTecoPower;
 }
 
-bool IRTecoAc::getPower(void) {
-  return (remote_state & kTecoPower) == kTecoPower; }
+bool IRTecoAc::getPower(void) { return remote_state & kTecoPower; }
 
 void IRTecoAc::setTemp(const uint8_t temp) {
   uint8_t newtemp = temp;
@@ -137,6 +145,63 @@ void IRTecoAc::setSleep(const bool on) {
 
 bool IRTecoAc::getSleep(void) { return remote_state & kTecoSleep; }
 
+bool IRTecoAc::getLight(void) { return remote_state & kTecoLight; }
+
+void IRTecoAc::setLight(const bool on) {
+  if (on)
+    remote_state |= kTecoLight;
+  else
+    remote_state &= ~kTecoLight;
+}
+
+bool IRTecoAc::getHumid(void) { return remote_state & kTecoHumid; }
+
+void IRTecoAc::setHumid(const bool on) {
+  if (on)
+    remote_state |= kTecoHumid;
+  else
+    remote_state &= ~kTecoHumid;
+}
+
+bool IRTecoAc::getSave(void) { return remote_state & kTecoSave; }
+
+void IRTecoAc::setSave(const bool on) {
+  if (on)
+    remote_state |= kTecoSave;
+  else
+    remote_state &= ~kTecoSave;
+}
+
+bool IRTecoAc::getTimerEnabled(void) { return remote_state & kTecoTimerOn; }
+
+uint16_t IRTecoAc::getTimer(void) {
+  uint16_t mins = 0;
+  if (getTimerEnabled()) {
+    mins = ((remote_state & kTecoTimerTenHr) >> 13) * 60 * 10 +
+           ((remote_state & kTecoTimerUniHr) >> 16) * 60;
+    if (remote_state & kTecoTimerHalfH) mins += 30;
+  }
+  return mins;
+}
+
+// Set the timer for when the A/C unit will switch power state.
+// Args:
+//   nr_mins: Number of minutes before power state change.
+//            `0` will clear the timer. Max is 24 hrs.
+//            Time is stored internaly in increments of 30 mins.
+void IRTecoAc::setTimer(const uint16_t nr_mins) {
+  uint16_t mins = std::min(nr_mins, (uint16_t)(24 * 60));  // Limit to 24 hrs.
+  bool half_hour = (mins % 60) >= 30;
+  uint8_t hours = mins / 60;
+  remote_state &= ~kTecoTimerMask;  // Clear previous data
+  if (mins) {
+    remote_state |= kTecoTimerOn;  // Enable the timer.
+    if (half_hour) remote_state |= kTecoTimerHalfH;
+    remote_state |= ((hours % 10) << 16);  // Set the unit hours.
+    remote_state |= ((hours / 10) << 13);  // Set the tens of hours.
+  }
+}
+
 // Convert a standard A/C mode into its native mode.
 uint8_t IRTecoAc::convertMode(const stdAc::opmode_t mode) {
   switch (mode) {
@@ -203,10 +268,10 @@ stdAc::state_t IRTecoAc::toCommon(void) {
   result.swingv = this->getSwing() ? stdAc::swingv_t::kAuto :
                                      stdAc::swingv_t::kOff;
   result.sleep = this->getSleep() ? 0 : -1;
+  result.light = this->getLight();
   // Not supported.
   result.swingh = stdAc::swingh_t::kOff;
   result.turbo = false;
-  result.light = false;
   result.filter = false;
   result.econo = false;
   result.quiet = false;
@@ -219,33 +284,23 @@ stdAc::state_t IRTecoAc::toCommon(void) {
 // Convert the internal state into a human readable string.
 String IRTecoAc::toString(void) {
   String result = "";
-  result.reserve(80);  // Reserve some heap for the string to reduce fragging.
-  result += IRutils::acBoolToString(getPower(), F("Power"), false);
-  result += IRutils::acModeToString(getMode(), kTecoAuto,
-                                    kTecoCool, kTecoHeat,
-                                    kTecoDry, kTecoFan);
-  result += F(", Temp: ");
-  result += uint64ToString(getTemp());
-  result += F("C, Fan: ");
-  result += uint64ToString(getFan());
-  switch (this->getFan()) {
-    case kTecoFanAuto:
-      result += F(" (Auto)");
-      break;
-    case kTecoFanHigh:
-      result += F(" (High)");
-      break;
-    case kTecoFanLow:
-      result += F(" (Low)");
-      break;
-    case kTecoFanMed:
-      result += F(" (Med)");
-      break;
-    default:
-      result += F(" (UNKNOWN)");
-  }
-  result += IRutils::acBoolToString(getSleep(), F("Sleep"));
-  result += IRutils::acBoolToString(getSwing(), F("Swing"));
+  result.reserve(100);  // Reserve some heap for the string to reduce fragging.
+  result += addBoolToString(getPower(), F("Power"), false);
+  result += addModeToString(getMode(), kTecoAuto, kTecoCool, kTecoHeat,
+                            kTecoDry, kTecoFan);
+  result += addTempToString(getTemp());
+  result += addFanToString(getFan(), kTecoFanHigh, kTecoFanLow,
+                           kTecoFanAuto, kTecoFanAuto, kTecoFanMed);
+  result += addBoolToString(getSleep(), F("Sleep"));
+  result += addBoolToString(getSwing(), F("Swing"));
+  result += addBoolToString(getLight(), F("Light"));
+  result += addBoolToString(getHumid(), F("Humid"));
+  result += addBoolToString(getSave(), F("Save"));
+  if (getTimerEnabled())
+    result += addLabeledString(irutils::minsToString(getTimer()),
+                               F("Timer"));
+  else
+    result += addBoolToString(false, F("Timer"));
   return result;
 }
 
@@ -273,7 +328,7 @@ bool IRrecv::decodeTeco(decode_results* results,
                     kTecoBitMark, kTecoOneSpace,
                     kTecoBitMark, kTecoZeroSpace,
                     kTecoBitMark, kTecoGap, true,
-                    kTolerance, kMarkExcess, false)) return false;
+                    _tolerance, kMarkExcess, false)) return false;
 
   // Success
   results->decode_type = TECO;

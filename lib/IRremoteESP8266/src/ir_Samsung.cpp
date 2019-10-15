@@ -50,6 +50,13 @@ const uint16_t kSamsungAcBitMark = 586;
 const uint16_t kSamsungAcOneSpace = 1432;
 const uint16_t kSamsungAcZeroSpace = 436;
 
+using irutils::addBoolToString;
+using irutils::addFanToString;
+using irutils::addIntToString;
+using irutils::addLabeledString;
+using irutils::addModeToString;
+using irutils::addTempToString;
+
 #if SEND_SAMSUNG
 // Send a Samsung formatted message.
 // Samsung has a separate message to indicate a repeat, like NEC does.
@@ -162,7 +169,7 @@ bool IRrecv::decodeSAMSUNG(decode_results *results, const uint16_t nbits,
 //   Protocol is used by Samsung Bluray Remote: ak59-00167a
 //
 // Ref:
-//   https://github.com/markszabo/IRremoteESP8266/issues/621
+//   https://github.com/crankyoldgit/IRremoteESP8266/issues/621
 void IRsend::sendSamsung36(const uint64_t data, const uint16_t nbits,
                            const uint16_t repeat) {
   if (nbits < 16) return;  // To small to send.
@@ -202,7 +209,7 @@ void IRsend::sendSamsung36(const uint64_t data, const uint16_t nbits,
 //   Protocol is used by Samsung Bluray Remote: ak59-00167a
 //
 // Ref:
-//   https://github.com/markszabo/IRremoteESP8266/issues/621
+//   https://github.com/crankyoldgit/IRremoteESP8266/issues/621
 bool IRrecv::decodeSamsung36(decode_results *results, const uint16_t nbits,
                              const bool strict) {
   if (results->rawlen < 2 * nbits + kHeader + kFooter * 2 - 1)
@@ -257,7 +264,7 @@ bool IRrecv::decodeSamsung36(decode_results *results, const uint16_t nbits,
 // Status: Stable / Known working.
 //
 // Ref:
-//   https://github.com/markszabo/IRremoteESP8266/issues/505
+//   https://github.com/crankyoldgit/IRremoteESP8266/issues/505
 void IRsend::sendSamsungAC(const uint8_t data[], const uint16_t nbytes,
                            const uint16_t repeat) {
   if (nbytes < kSamsungAcStateLength && nbytes % kSamsungACSectionLength)
@@ -283,11 +290,17 @@ void IRsend::sendSamsungAC(const uint8_t data[], const uint16_t nbytes,
 }
 #endif  // SEND_SAMSUNG_AC
 
-IRSamsungAc::IRSamsungAc(const uint16_t pin) : _irsend(pin) {
+IRSamsungAc::IRSamsungAc(const uint16_t pin, const bool inverted,
+                         const bool use_modulation)
+    : _irsend(pin, inverted, use_modulation) {
   this->stateReset();
 }
 
-void IRSamsungAc::stateReset(void) {
+// Reset the internal state of the emulation.
+// Args:
+//   forcepower: A flag indicating if force sending a special power message
+//              with the first `send()` call. Default: true
+void IRSamsungAc::stateReset(const bool forcepower, const bool initialPower) {
   for (uint8_t i = 0; i < kSamsungAcExtendedStateLength; i++)
     remote_state[i] = 0x0;
   remote_state[0] = 0x02;
@@ -300,7 +313,9 @@ void IRSamsungAc::stateReset(void) {
   remote_state[10] = 0x71;
   remote_state[12] = 0x15;
   remote_state[13] = 0xF0;
-  _sendpower = false;
+  _forcepower = forcepower;
+  _lastsentpowerstate = initialPower;
+  setPower(initialPower);
 }
 
 void IRSamsungAc::begin(void) { _irsend.begin(); }
@@ -345,12 +360,13 @@ void IRSamsungAc::checksum(uint16_t length) {
 // i.e. When the device is already running.
 void IRSamsungAc::send(const uint16_t repeat, const bool calcchecksum) {
   if (calcchecksum) this->checksum();
-  if (_sendpower) {  // Do we need to send a the special power on/off message?
-    _sendpower = false;  // It will now been sent.
+  // Do we need to send a the special power on/off message?
+  if (this->getPower() != _lastsentpowerstate || _forcepower) {
+    _forcepower = false;  // It will now been sent, so clear the flag if set.
     if (this->getPower()) {
-      this->sendOn();
+      this->sendOn(repeat);
     } else {
-      this->sendOff();
+      this->sendOff(repeat);
       return;  // No point sending anything else if we are turning the unit off.
     }
   }
@@ -379,24 +395,26 @@ void IRSamsungAc::sendExtended(const uint16_t repeat, const bool calcchecksum) {
 
 // Send the special extended "On" message as the library can't seem to reproduce
 // this message automatically.
-// See: https://github.com/markszabo/IRremoteESP8266/issues/604#issuecomment-475020036
+// See: https://github.com/crankyoldgit/IRremoteESP8266/issues/604#issuecomment-475020036
 void IRSamsungAc::sendOn(const uint16_t repeat) {
   const uint8_t extended_state[21] = {
       0x02, 0x92, 0x0F, 0x00, 0x00, 0x00, 0xF0,
       0x01, 0xD2, 0x0F, 0x00, 0x00, 0x00, 0x00,
       0x01, 0xE2, 0xFE, 0x71, 0x80, 0x11, 0xF0};
   _irsend.sendSamsungAC(extended_state, kSamsungAcExtendedStateLength, repeat);
+  _lastsentpowerstate = true;  // On
 }
 
 // Send the special extended "Off" message as the library can't seem to
 // reproduce this message automatically.
-// See: https://github.com/markszabo/IRremoteESP8266/issues/604#issuecomment-475020036
+// See: https://github.com/crankyoldgit/IRremoteESP8266/issues/604#issuecomment-475020036
 void IRSamsungAc::sendOff(const uint16_t repeat) {
   const uint8_t extended_state[21] = {
       0x02, 0xB2, 0x0F, 0x00, 0x00, 0x00, 0xC0,
       0x01, 0xD2, 0x0F, 0x00, 0x00, 0x00, 0x00,
       0x01, 0x02, 0xFF, 0x71, 0x80, 0x11, 0xC0};
   _irsend.sendSamsungAC(extended_state, kSamsungAcExtendedStateLength, repeat);
+  _lastsentpowerstate = false;  // Off
 }
 #endif  // SEND_SAMSUNG_AC
 
@@ -419,13 +437,11 @@ void IRSamsungAc::setRaw(const uint8_t new_code[], const uint16_t length) {
 void IRSamsungAc::on(void) {
   remote_state[1] &= ~kSamsungAcPowerMask1;  // Bit needs to be cleared.
   remote_state[6] |= kSamsungAcPowerMask6;  // Bit needs to be set.
-  _sendpower = true;  // Flag that we need to send the special power message(s).
 }
 
 void IRSamsungAc::off(void) {
   remote_state[1] |= kSamsungAcPowerMask1;  // Bit needs to be set.
   remote_state[6] &= ~kSamsungAcPowerMask6;  // Bit needs to be cleared.
-  _sendpower = true;  // Flag that we need to send the special power message(s).
 }
 
 void IRSamsungAc::setPower(const bool on) {
@@ -661,40 +677,38 @@ stdAc::state_t IRSamsungAc::toCommon(void) {
 String IRSamsungAc::toString(void) {
   String result = "";
   result.reserve(100);  // Reserve some heap for the string to reduce fragging.
-  result += IRutils::acBoolToString(getPower(), F("Power"), false);
-  result += IRutils::acModeToString(getMode(), kSamsungAcAuto, kSamsungAcCool,
-                                    kSamsungAcHeat, kSamsungAcDry,
-                                    kSamsungAcFan);
-  result += F(", Temp: ");
-  result += uint64ToString(getTemp());
-  result += F("C, Fan: ");
-  result += uint64ToString(getFan());
+  result += addBoolToString(getPower(), F("Power"), false);
+  result += addModeToString(getMode(), kSamsungAcAuto, kSamsungAcCool,
+                            kSamsungAcHeat, kSamsungAcDry,
+                            kSamsungAcFan);
+  result += addTempToString(getTemp());
+  result += addIntToString(getFan(), F("Fan"));
   switch (getFan()) {
     case kSamsungAcFanAuto:
     case kSamsungAcFanAuto2:
-      result += F(" (AUTO)");
+      result += F(" (Auto)");
       break;
     case kSamsungAcFanLow:
-      result += F(" (LOW)");
+      result += F(" (Low)");
       break;
     case kSamsungAcFanMed:
-      result += F(" (MED)");
+      result += F(" (Medium)");
       break;
     case kSamsungAcFanHigh:
-      result += F(" (HIGH)");
+      result += F(" (High)");
       break;
     case kSamsungAcFanTurbo:
-      result += F(" (TURBO)");
+      result += F(" (Turbo)");
       break;
     default:
       result += F(" (UNKNOWN)");
       break;
   }
-  result += IRutils::acBoolToString(getSwing(), F("Swing"));
-  result += IRutils::acBoolToString(getBeep(), F("Beep"));
-  result += IRutils::acBoolToString(getClean(), F("Clean"));
-  result += IRutils::acBoolToString(getQuiet(), F("Quiet"));
-  result += IRutils::acBoolToString(getPowerful(), F("Powerful"));
+  result += addBoolToString(getSwing(), F("Swing"));
+  result += addBoolToString(getBeep(), F("Beep"));
+  result += addBoolToString(getClean(), F("Clean"));
+  result += addBoolToString(getQuiet(), F("Quiet"));
+  result += addBoolToString(getPowerful(), F("Powerful"));
   return result;
 }
 
@@ -711,7 +725,7 @@ String IRSamsungAc::toString(void) {
 // Status: Stable / Known to be working.
 //
 // Ref:
-//   https://github.com/markszabo/IRremoteESP8266/issues/505
+//   https://github.com/crankyoldgit/IRremoteESP8266/issues/505
 bool IRrecv::decodeSamsungAC(decode_results *results, const uint16_t nbits,
                              const bool strict) {
   if (results->rawlen < 2 * nbits + kHeader * 3 + kFooter * 2 - 1)
@@ -735,7 +749,7 @@ bool IRrecv::decodeSamsungAC(decode_results *results, const uint16_t nbits,
                         kSamsungAcBitMark, kSamsungAcZeroSpace,
                         kSamsungAcBitMark, kSamsungAcSectionGap,
                         pos + kSamsungACSectionLength >= nbits / 8,
-                        kTolerance, 0, false);
+                        _tolerance, 0, false);
     if (used == 0) return false;
     offset += used;
   }

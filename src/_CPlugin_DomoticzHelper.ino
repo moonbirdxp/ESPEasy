@@ -1,3 +1,4 @@
+#ifdef USES_DOMOTICZ
 // HUM_STAT can be one of:
 
 // 0=Normal
@@ -135,6 +136,9 @@ String formatDomoticzSensorType(struct EventStruct *event) {
 
       // Too specific for HTTP/MQTT
       break;
+    case SENSOR_TYPE_STRING:
+      values = event->String2;
+      break;
     default:
     {
       String log = F("Domoticz Controller: Not yet implemented sensor type: ");
@@ -164,3 +168,4 @@ String formatDomoticzSensorType(struct EventStruct *event) {
   }
   return values;
 }
+#endif // USES_DOMOTICZ

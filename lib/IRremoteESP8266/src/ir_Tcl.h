@@ -23,7 +23,7 @@ const uint16_t kTcl112AcBitMark = 500;
 const uint16_t kTcl112AcOneSpace = 1050;
 const uint16_t kTcl112AcZeroSpace = 325;
 const uint32_t kTcl112AcGap = kDefaultMessageGap;  // Just a guess.
-const uint8_t kTcl112AcTolerance = kTolerance + 5;  // Percent
+const uint8_t kTcl112AcTolerance = 5;  // Extra Percent
 
 const uint8_t kTcl112AcHeat = 1;
 const uint8_t kTcl112AcDry =  2;
@@ -51,7 +51,8 @@ const uint8_t kTcl112AcBitTurbo  = 0b01000000;
 
 class IRTcl112Ac {
  public:
-  explicit IRTcl112Ac(const uint16_t pin);
+  explicit IRTcl112Ac(const uint16_t pin, const bool inverted = false,
+                      const bool use_modulation = true);
 
 #if SEND_TCL112AC
   void send(const uint16_t repeat = kTcl112AcDefaultRepeat);

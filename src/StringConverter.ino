@@ -1,3 +1,8 @@
+#include "src/Globals/CRCValues.h"
+#include "src/Globals/Device.h"
+#include "src/Globals/ESPEasyWiFiEvent.h"
+#include "src/Globals/MQTT.h"
+
 /********************************************************************************************\
    Convert a char string to integer
  \*********************************************************************************************/
@@ -51,10 +56,11 @@ String formatIP(const IPAddress& ip) {
 
 void formatMAC(const uint8_t *mac, char (& strMAC)[20]) {
   sprintf_P(strMAC, PSTR("%02X:%02X:%02X:%02X:%02X:%02X"), mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  ZERO_TERMINATE(strMAC);
 }
 
 String formatMAC(const uint8_t *mac) {
-  char str[20];
+  char str[20] = {0};
 
   formatMAC(mac, str);
   return String(str);
@@ -180,27 +186,33 @@ void addNewLine(String& line) {
 /*********************************************************************************************\
    Format a value to the set number of decimals
 \*********************************************************************************************/
-String doFormatUserVar(byte TaskIndex, byte rel_index, bool mustCheck, bool& isvalid) {
+String doFormatUserVar(struct EventStruct *event, byte rel_index, bool mustCheck, bool& isvalid) {
   isvalid = true;
-  const byte BaseVarIndex = TaskIndex * VARS_PER_TASK;
-  const byte DeviceIndex  = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
+  const byte BaseVarIndex = event->TaskIndex * VARS_PER_TASK;
+  const byte DeviceIndex  = getDeviceIndex(Settings.TaskDeviceNumber[event->TaskIndex]);
 
   if (Device[DeviceIndex].ValueCount <= rel_index) {
     isvalid = false;
 
     if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
       String log = F("No sensor value for TaskIndex: ");
-      log += TaskIndex;
+      log += event->TaskIndex;
       log += F(" varnumber: ");
       log += rel_index;
       addLog(LOG_LEVEL_ERROR, log);
     }
     return "";
   }
+  switch (Device[DeviceIndex].VType) {
+    case SENSOR_TYPE_LONG:
+      return String((unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16));
+    case SENSOR_TYPE_STRING:
+      return event->String2;
 
-  if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG) {
-    return String((unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16));
+    default:
+      break;
   }
+
   float f(UserVar[BaseVarIndex + rel_index]);
 
   if (mustCheck && !isValidFloat(f)) {
@@ -209,7 +221,7 @@ String doFormatUserVar(byte TaskIndex, byte rel_index, bool mustCheck, bool& isv
 
     if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
       String log = F("Invalid float value for TaskIndex: ");
-      log += TaskIndex;
+      log += event->TaskIndex;
       log += F(" varnumber: ");
       log += rel_index;
       addLog(LOG_LEVEL_DEBUG, log);
@@ -217,27 +229,34 @@ String doFormatUserVar(byte TaskIndex, byte rel_index, bool mustCheck, bool& isv
 #endif // ifndef BUILD_NO_DEBUG
     f = 0;
   }
+  LoadTaskSettings(event->TaskIndex);
   return toString(f, ExtraTaskSettings.TaskDeviceValueDecimals[rel_index]);
 }
 
 String formatUserVarNoCheck(byte TaskIndex, byte rel_index) {
   bool isvalid;
-
-  return doFormatUserVar(TaskIndex, rel_index, false, isvalid);
+  // FIXME TD-er: calls to this function cannot handle SENSOR_TYPE_STRING
+  struct EventStruct TempEvent;
+  TempEvent.TaskIndex = TaskIndex;
+  return doFormatUserVar(&TempEvent, rel_index, false, isvalid);
 }
 
 String formatUserVar(byte TaskIndex, byte rel_index, bool& isvalid) {
-  return doFormatUserVar(TaskIndex, rel_index, true, isvalid);
+  // FIXME TD-er: calls to this function cannot handle SENSOR_TYPE_STRING
+  struct EventStruct TempEvent;
+  TempEvent.TaskIndex = TaskIndex;
+  return doFormatUserVar(&TempEvent, rel_index, true, isvalid);
 }
 
 String formatUserVarNoCheck(struct EventStruct *event, byte rel_index)
 {
-  return formatUserVarNoCheck(event->TaskIndex, rel_index);
+  bool isvalid;
+  return doFormatUserVar(event, rel_index, false, isvalid);
 }
 
 String formatUserVar(struct EventStruct *event, byte rel_index, bool& isvalid)
 {
-  return formatUserVar(event->TaskIndex, rel_index, isvalid);
+  return doFormatUserVar(event, rel_index, true, isvalid);
 }
 
 /*********************************************************************************************\
@@ -484,6 +503,32 @@ void htmlStrongEscape(String& html)
   html = escaped;
 }
 
+
+//********************************************************************************
+// URNEncode char string to string object
+//********************************************************************************
+String URLEncode(const char* msg)
+{
+  const char *hex = "0123456789abcdef";
+  String encodedMsg = "";
+
+  while (*msg != '\0') {
+    if ( ('a' <= *msg && *msg <= 'z')
+         || ('A' <= *msg && *msg <= 'Z')
+         || ('0' <= *msg && *msg <= '9')
+         || ('-' == *msg) || ('_' == *msg)
+         || ('.' == *msg) || ('~' == *msg) ) {
+      encodedMsg += *msg;
+    } else {
+      encodedMsg += '%';
+      encodedMsg += hex[*msg >> 4];
+      encodedMsg += hex[*msg & 15];
+    }
+    msg++;
+  }
+  return encodedMsg;
+}
+
 /********************************************************************************************\
    replace other system variables like %sysname%, %systime%, %ip%
  \*********************************************************************************************/
@@ -588,9 +633,11 @@ void parseSpecialCharacters(String& s, boolean useURLencode)
   if (s.indexOf(T) != -1) { (S((T), s, useURLencode)); }
 void parseSystemVariables(String& s, boolean useURLencode)
 {
+  START_TIMER
   parseSpecialCharacters(s, useURLencode);
 
   if (s.indexOf('%') == -1) {
+    STOP_TIMER(PARSE_SYSVAR_NOCHANGE);
     return; // Nothing to replace
   }
   #if FEATURE_ADC_VCC
@@ -616,6 +663,7 @@ void parseSystemVariables(String& s, boolean useURLencode)
   if (s.indexOf(F("%sys")) != -1) {
     SMART_REPL(F("%sysload%"),       String(getCPUload()))
     SMART_REPL(F("%sysheap%"),       String(ESP.getFreeHeap()));
+    SMART_REPL(F("%sysstack%"),      String(getCurrentFreeStack()));
     SMART_REPL(F("%systm_hm%"),      getTimeString(':', false))
     SMART_REPL(F("%systm_hm_am%"),   getTimeString_ampm(':', false))
     SMART_REPL(F("%systime%"),       getTimeString(':'))
@@ -625,7 +673,7 @@ void parseSystemVariables(String& s, boolean useURLencode)
     repl(F("%sysname%"), Settings.Name, s, useURLencode);
 
     // valueString is being used by the macro.
-    char valueString[5];
+    char valueString[5] = {0};
     #define SMART_REPL_TIME(T, F, V) \
   if (s.indexOf(T) != -1) { sprintf_P(valueString, (F), (V)); repl((T), valueString, s, useURLencode); }
     SMART_REPL_TIME(F("%sysyear%"),  PSTR("%d"), year())
@@ -653,11 +701,15 @@ void parseSystemVariables(String& s, boolean useURLencode)
   SMART_REPL(F("%lcltime_am%"), getDateTimeString_ampm('-', ':', ' '))
   SMART_REPL(F("%uptime%"),     String(wdcounter / 2))
   SMART_REPL(F("%unixtime%"),   String(getUnixTime()))
+  SMART_REPL(F("%unixday%"),    String(getUnixTime() / 86400))
+  SMART_REPL(F("%unixday_sec%"), String(getUnixTime() % 86400))
   SMART_REPL_T(F("%sunset"),  replSunSetTimeString)
   SMART_REPL_T(F("%sunrise"), replSunRiseTimeString)
 
   if (s.indexOf(F("%is")) != -1) {
+#ifdef USES_MQTT
     SMART_REPL(F("%ismqtt%"),    String(MQTTclient_connected));
+#endif    
     SMART_REPL(F("%iswifi%"),    String(wifiStatus)); // 0=disconnected, 1=connected, 2=got ip, 3=services initialized
     SMART_REPL(F("%isntp%"),     String(statusNTPInitialized));
     #ifdef USES_P037
@@ -671,6 +723,7 @@ void parseSystemVariables(String& s, boolean useURLencode)
       SMART_REPL("%v" + toString(i + 1, 0) + '%', String(customFloatVar[i]))
     }
   }
+  STOP_TIMER(PARSE_SYSVAR);
 }
 
 String getReplacementString(const String& format, String& s) {
@@ -719,8 +772,7 @@ void parseEventVariables(String& s, struct EventStruct *event, boolean useURLenc
       SMART_REPL(F("%val4%"), formatUserVarNoCheck(event, 3))
     }
   }
-
-  // FIXME TD-er: Must make sure LoadTaskSettings has been performed before this is called.
+  LoadTaskSettings(event->TaskIndex);
   repl(F("%tskname%"), ExtraTaskSettings.TaskDeviceName, s, useURLencode);
 
   if (s.indexOf(F("%vname")) != -1) {

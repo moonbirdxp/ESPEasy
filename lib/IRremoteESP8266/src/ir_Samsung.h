@@ -23,7 +23,7 @@
 //   Brand: Samsung,  Model: AR12HSSDBWKNEU A/C
 
 // Ref:
-//   https://github.com/markszabo/IRremoteESP8266/issues/505
+//   https://github.com/crankyoldgit/IRremoteESP8266/issues/505
 
 // Constants
 const uint8_t kSamsungAcAuto = 0;
@@ -62,9 +62,10 @@ const uint64_t kSamsungAcPowerSection = 0x1D20F00000000;
 // Classes
 class IRSamsungAc {
  public:
-  explicit IRSamsungAc(const uint16_t pin);
+  explicit IRSamsungAc(const uint16_t pin, const bool inverted = false,
+                       const bool use_modulation = true);
 
-  void stateReset(void);
+  void stateReset(const bool forcepower = true, const bool initialPower = true);
 #if SEND_SAMSUNG_AC
   void send(const uint16_t repeat = kSamsungAcDefaultRepeat,
             const bool calcchecksum = true);
@@ -117,7 +118,8 @@ class IRSamsungAc {
 #endif
   // The state of the IR remote in IR code form.
   uint8_t remote_state[kSamsungAcExtendedStateLength];
-  bool _sendpower;  // Hack to know when we need to send a special power mesg.
+  bool _forcepower;  // Hack to know when we need to send a special power mesg.
+  bool _lastsentpowerstate;
   void checksum(const uint16_t length = kSamsungAcStateLength);
 };
 

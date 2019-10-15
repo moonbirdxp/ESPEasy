@@ -48,6 +48,7 @@ const uint8_t kPanasonicAcCool = 3;  // 0b0011
 const uint8_t kPanasonicAcHeat = 4;  // 0b0010
 const uint8_t kPanasonicAcFan = 6;   // 0b0110
 const uint8_t kPanasonicAcFanMin = 0;
+const uint8_t kPanasonicAcFanMed = 2;
 const uint8_t kPanasonicAcFanMax = 4;
 const uint8_t kPanasonicAcFanAuto = 7;
 const uint8_t kPanasonicAcFanOffset = 3;
@@ -61,8 +62,11 @@ const uint8_t kPanasonicAcPowerful = 0x20;   // 0b100000
 const uint8_t kPanasonicAcQuietCkp = 0x20;  // 0b100000
 const uint8_t kPanasonicAcPowerfulCkp = 1;  // 0b1
 const uint8_t kPanasonicAcSwingVAuto = 0xF;
-const uint8_t kPanasonicAcSwingVUp = 0x1;
-const uint8_t kPanasonicAcSwingVDown = 0x5;
+const uint8_t kPanasonicAcSwingVHighest = 0x1;
+const uint8_t kPanasonicAcSwingVHigh = 0x2;
+const uint8_t kPanasonicAcSwingVMiddle = 0x3;
+const uint8_t kPanasonicAcSwingVLow = 0x4;
+const uint8_t kPanasonicAcSwingVLowest = 0x5;
 const uint8_t kPanasonicAcSwingHAuto = 0xD;
 const uint8_t kPanasonicAcSwingHMiddle = 0x6;
 const uint8_t kPanasonicAcSwingHFullLeft = 0x9;
@@ -92,7 +96,8 @@ enum panasonic_ac_remote_model_t {
 
 class IRPanasonicAc {
  public:
-  explicit IRPanasonicAc(const uint16_t pin);
+  explicit IRPanasonicAc(const uint16_t pin, const bool inverted = false,
+                         const bool use_modulation = true);
 
   void stateReset(void);
 #if SEND_PANASONIC
@@ -138,17 +143,16 @@ class IRPanasonicAc {
                    const bool enable = true);
   void cancelOffTimer(void);
   bool isOffTimerEnabled(void);
-  uint8_t convertMode(const stdAc::opmode_t mode);
-  uint8_t convertFan(const stdAc::fanspeed_t speed);
-  uint8_t convertSwingV(const stdAc::swingv_t position);
-  uint8_t convertSwingH(const stdAc::swingh_t position);
+  static uint8_t convertMode(const stdAc::opmode_t mode);
+  static uint8_t convertFan(const stdAc::fanspeed_t speed);
+  static uint8_t convertSwingV(const stdAc::swingv_t position);
+  static uint8_t convertSwingH(const stdAc::swingh_t position);
   static stdAc::opmode_t toCommonMode(const uint8_t mode);
   static stdAc::fanspeed_t toCommonFanSpeed(const uint8_t speed);
   static stdAc::swingv_t toCommonSwingV(const uint8_t pos);
   static stdAc::swingh_t toCommonSwingH(const uint8_t pos);
   stdAc::state_t toCommon(void);
   String toString(void);
-  static String timeToString(const uint16_t mins_since_midnight);
 #ifndef UNIT_TEST
 
  private:

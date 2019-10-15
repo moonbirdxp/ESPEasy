@@ -319,10 +319,13 @@ int weekday()
 
 String weekday_str()
 {
-  const int wday(weekday() - 1); // here: Count from Sunday = 0
-  const String weekDays = F("SunMonTueWedThuFriSat");
+	return weekday_str(weekday()-1);
+}
 
-  return weekDays.substring(wday * 3, wday * 3 + 3);
+String weekday_str(int wday)
+{
+	const String weekDays = F("SunMonTueWedThuFriSat");
+	return weekDays.substring(wday * 3, wday * 3 + 3);
 }
 
 void initTime()
@@ -341,7 +344,8 @@ void checkTime()
 
   if (tm.tm_min != PrevMinutes)
   {
-    PluginCall(PLUGIN_CLOCK_IN, 0, dummyString);
+    String dummy;
+    PluginCall(PLUGIN_CLOCK_IN, 0, dummy);
     PrevMinutes = tm.tm_min;
 
     if (Settings.UseRules)
@@ -514,7 +518,7 @@ bool getNtpTime(double& unixTime_d)
 // Return the time difference as a signed value, taking into account the timers may overflow.
 // Returned timediff is between -24.9 days and +24.9 days.
 // Returned value is positive when "next" is after "prev"
-long timeDiff(const unsigned long prev, const unsigned long next)
+long ICACHE_RAM_ATTR timeDiff(const unsigned long prev, const unsigned long next)
 {
   long signed_diff = 0;
 

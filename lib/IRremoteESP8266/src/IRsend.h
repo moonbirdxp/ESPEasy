@@ -9,7 +9,7 @@
 #include "IRremoteESP8266.h"
 
 // Originally from https://github.com/shirriff/Arduino-IRremote/
-// Updated by markszabo (https://github.com/markszabo/IRremoteESP8266) for
+// Updated by markszabo (https://github.com/crankyoldgit/IRremoteESP8266) for
 // sending IR code on ESP8266
 
 #if TEST || UNIT_TEST
@@ -49,6 +49,8 @@ namespace stdAc {
     kHeat =  2,
     kDry  =  3,
     kFan  =  4,
+    // Add new entries before this one, and update it to point to the last entry
+    kLastOpmodeEnum = kFan,
   };
 
   enum class fanspeed_t {
@@ -58,6 +60,8 @@ namespace stdAc {
     kMedium = 3,
     kHigh =   4,
     kMax =    5,
+    // Add new entries before this one, and update it to point to the last entry
+    kLastFanspeedEnum = kMax,
   };
 
   enum class swingv_t {
@@ -68,6 +72,8 @@ namespace stdAc {
     kMiddle =  3,
     kLow =     4,
     kLowest =  5,
+    // Add new entries before this one, and update it to point to the last entry
+    kLastSwingvEnum = kLowest,
   };
 
   enum class swingh_t {
@@ -78,6 +84,9 @@ namespace stdAc {
     kMiddle =   3,
     kRight =    4,
     kRightMax = 5,
+    kWide =     6,  // a.k.a. left & right at the same time.
+    // Add new entries before this one, and update it to point to the last entry
+    kLastSwinghEnum = kWide,
   };
 
   // Structure to hold a common A/C state.
@@ -266,6 +275,11 @@ class IRsend {
   void sendMitsubishi(uint64_t data, uint16_t nbits = kMitsubishiBits,
                       uint16_t repeat = kMitsubishiMinRepeat);
 #endif
+#if SEND_MITSUBISHI136
+  void sendMitsubishi136(const unsigned char data[],
+                         const uint16_t nbytes = kMitsubishi136StateLength,
+                         const uint16_t repeat = kMitsubishi136MinRepeat);
+#endif
 #if SEND_MITSUBISHI2
   void sendMitsubishi2(uint64_t data, uint16_t nbits = kMitsubishiBits,
                        uint16_t repeat = kMitsubishiMinRepeat);
@@ -306,11 +320,26 @@ class IRsend {
                   const uint16_t nbytes = kDaikinStateLength,
                   const uint16_t repeat = kDaikinDefaultRepeat);
 #endif
+#if SEND_DAIKIN128
+  void sendDaikin128(const unsigned char data[],
+                     const uint16_t nbytes = kDaikin128StateLength,
+                     const uint16_t repeat = kDaikin128DefaultRepeat);
+#endif  // SEND_DAIKIN128
+#if SEND_DAIKIN152
+  void sendDaikin152(const unsigned char data[],
+                     const uint16_t nbytes = kDaikin152StateLength,
+                     const uint16_t repeat = kDaikin152DefaultRepeat);
+#endif  // SEND_DAIKIN152
 #if SEND_DAIKIN160
   void sendDaikin160(const unsigned char data[],
                      const uint16_t nbytes = kDaikin160StateLength,
                      const uint16_t repeat = kDaikin160DefaultRepeat);
 #endif  // SEND_DAIKIN160
+#if SEND_DAIKIN176
+  void sendDaikin176(const unsigned char data[],
+                     const uint16_t nbytes = kDaikin176StateLength,
+                     const uint16_t repeat = kDaikin176DefaultRepeat);
+#endif  // SEND_DAIKIN176
 #if SEND_DAIKIN2
   void sendDaikin2(const unsigned char data[],
                    const uint16_t nbytes = kDaikin2StateLength,
@@ -454,6 +483,11 @@ class IRsend {
                     const uint16_t nbytes = kNeoclimaStateLength,
                     const uint16_t repeat = kNeoclimaMinRepeat);
 #endif  // SEND_NEOCLIMA
+#if SEND_AMCOR
+  void sendAmcor(const unsigned char data[],
+                 const uint16_t nbytes = kAmcorStateLength,
+                 const uint16_t repeat = kAmcorDefaultRepeat);
+#endif  // SEND_AMCOR
 
 
  protected:
